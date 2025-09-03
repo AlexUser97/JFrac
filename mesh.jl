@@ -7,137 +7,130 @@ Copyright (c) ECOLE POLYTECHNIQUE FEDERALE DE LAUSANNE, Switzerland, Geo-Energy 
 See the LICENSE.TXT file for more details.
 """
 
-# import
-import matplotlib.pyplot as plt
-import mpl_toolkits.mplot3d.art3d as art3d
-import matplotlib.patches as mpatches
-import matplotlib.path as mpath
-from matplotlib.colors import to_rgb
-from matplotlib.collections import PatchCollection
-from properties import PlotProperties
+module Mesh
+include("visualization.jl")
+include("symmetry.jl")
 
-from visualization import zoom_factory, to_precision, text3d
-from symmetry import *
-import numpy as np
-import logging
+using .Visualization: zoom_factory, to_precision, text3d
+using .Symmetry: *
 
-class CartesianMesh:
-    """Class defining a Cartesian Mesh.
-
-    The constructor creates a uniform Cartesian mesh centered at (0,0) and having the dimensions of [-Lx,Lx]*[-Ly,Ly].
+using Logging
+using Plots
+"""
+    CartesianMesh
+    A uniform Cartesian mesh centered at (0,0) with domain [-Lx, Lx] × [-Ly, Ly].
 
     Args:
-        nx,ny (int):                -- number of elements in x and y directions respectively.
-        Lx,Ly (float):              -- lengths in x and y directions respectively.
-        symmetric (bool):           -- if true, additional variables (see list of attributes) will be evaluated for
-                                       symmetric fracture solver.
+    - `nx, ny::Int`:                      -- number of elements in x and y directions
+    - `Lx, Ly::Float64`:                  -- half-length in x and y directions
+    - `symmetric::Bool`:                  -- if true, additional variables (see list of attributes) will be evaluated for
+                                             symmetric fracture solver.
 
     Attributes:
-        Lx,Ly (float):                    -- length of the domain in x and y directions respectively. The rectangular domain
+    - `Lx, Ly::Float64`:                  -- length of the domain in x and y directions respectively. The rectangular domain
                                              have a total length of 2*Lx in the x direction and 2*Ly in the y direction. Both
                                              the positive and negative halves are included.
-        nx,ny (int):                      -- number of elements in x and y directions respectively.
-        hx,hy (float):                    -- grid spacing in x and y directions respectively.
-        VertexCoor  (ndarray):            -- [x,y] Coordinates of the vertices.
-        CenterCoor  (ndarray):            -- [x,y] coordinates of the center of the elements.
-        NumberOfElts (int):               -- total number of elements in the mesh.
-        EltArea (float):                  -- area of each element.
-        Connectivity (ndarray):           -- connectivity array giving four vertices of an element in the following order
+    - `nx, ny::Int`:                      -- number of elements in x and y directions respectively.
+    - `hx,hy::Float64`:                   -- grid spacing in x and y directions respectively.
+    - `VertexCoor::Matrix{Float64}`:      -- [x,y] Coordinates of the vertices.
+    - `CenterCoor::Matrix{Float64}`:      -- [x,y] coordinates of the center of the elements.
+    - `NumberOfElts::Int`:                -- total number of elements in the mesh.
+    - `EltArea::Float64`:                 -- area of each element.
+    - `Connectivity::Matrix{Int}`:        -- connectivity array giving four vertices of an element in the following order
                                              [bottom left, bottom right, top right, top left]
-        Connectivityelemedges (ndarray):  -- connectivity array giving four edges of an element in the following order
+    - `Connectivityelemedges::Matrix{Int}`: connectivity array giving four edges of an element in the following order
                                              [bottom, right, top, left]
-        Connectivityedgeselem (ndarray):  -- connectivity array giving two elements that are sharing an edge
-        Connectivityedgesnodes (ndarray): -- connectivity array giving two vertices of an edge
-        Connectivitynodesedges (ndarray): -- connectivity array giving four edges of a node in the following order
+    - `Connectivityedgeselem::Matrix{Int}`: connectivity array giving two elements that are sharing an edge
+    - `Connectivityedgesnodes::Matrix{Int}`: connectivity array giving two vertices of an edge
+    - `Connectivitynodesedges::Matrix{Int}`: connectivity array giving four edges of a node in the following order
                                              [vertical_top, horizotal_left, vertical_bottom, horizotal_right]
-        Connectivitynodeselem (ndarray):  -- connectivity array giving four elements of a node in the following order
+    - `Connectivitynodeselem::Matrix{Int}`: connectivity array giving four elements of a node in the following order
                                              [bottom left, bottom right, top right, top left]
-        NeiElements (ndarray):            -- Giving four neighboring elements with the following order:[left, right,
+    - `NeiElements::Matrix{Int}`:          -- Giving four neighboring elements with the following order:[left, right,
                                              bottom, up].
-        distCenter (ndarray):             -- the distance of the cells from the center.
-        CenterElts (ndarray):             -- the element in the center (the cell with the injection point).
+    - `distCenter::Matrix{Float64}`:       -- the distance of the cells from the center.
+    - `CenterElts::Matrix{Int}`:           -- the element in the center (the cell with the injection point).
 
-        domainLimits (ndarray):           -- the limits of the domain
+    - `domainLimits::Matrix{Float64}`:     -- the limits of the domain
 
     Note:
         The attributes below are only evaluated if symmetric solver is used.
 
     Attributes:
-        corresponding (ndarray): -- the index of the corresponding symmetric cells in the set of active cells
-                                    (activeSymtrc) for each cell in the mesh.
-        symmetricElts (ndarray): -- the set of four symmetric cells in the mesh for each of the cell.
-        activeSymtrc (ndarray):  -- the set of cells that are active in the mesh. Only these cells will be solved
-                                    and the solution will be replicated in the symmetric cells.
-        posQdrnt (ndarray):      -- the set of elements in the positive quadrant not including the boundaries.
-        boundary_x (ndarray):    -- the elements intersecting the positive x-axis line.
-        boundary_y (ndarray):    -- the elements intersecting the positive y-axis line.
-        volWeights (ndarray):    -- the weights of the active elements in the volume of the fracture. The cells in the
-                                    positive quadrant, the boundaries and the injection cell have the weights of 4, 2
-                                    and 1 respectively.
+    - `corresponding::Matrix{Int}`:        -- the index of the corresponding symmetric cells in the set of active cells
+                                              (activeSymtrc) for each cell in the mesh.
+    - `symmetricElts::Matrix{Int}`:        -- the set of four symmetric cells in the mesh for each of the cell.
+    - `activeSymtrc::Matrix{Int}`:         -- the set of cells that are active in the mesh. Only these cells will be solved
+                                              and the solution will be replicated in the symmetric cells.
+    - `posQdrnt::Matrix{Int}`:             -- the set of elements in the positive quadrant not including the boundaries.
+    - `boundary_x::Matrix{Int}`:           -- the elements intersecting the positive x-axis line.
+    - `boundary_y::Matrix{Int}`:           -- the elements intersecting the positive y-axis line.
+    - `volWeights::Matrix{Float64}`:       -- the weights of the active elements in the volume of the fracture. The cells in the
+                                              positive quadrant, the boundaries and the injection cell have the weights of 4, 2
+                                              and 1 respectively.
 
-    """
-
-    def __init__(self, Lx, Ly, nx, ny, symmetric=False):
-        """ 
-        Creates a uniform Cartesian mesh centered at zero and having the dimensions of [-Lx, Lx]*[-Ly, Ly].
-
-        Args:
-            nx,ny (int):        -- number of elements in x and y directions respectively
-            Lx,Ly (float):      -- lengths in x and y directions respectively
-            symmetric (bool):   -- if true, additional variables (see list of attributes) will be evaluated for
-                                    symmetric fracture solver.
-
-        """
-        log = logging.getLogger('PyFrac.mesh')
-        if not isinstance(Lx, list):
-            self.Lx = Lx
-            xlims = np.asarray([-Lx, Lx])
-        else:
-            self.Lx = abs(Lx[0]-Lx[1]) / 2
-            xlims = np.asarray([Lx[0], Lx[1]])
-
-        if not isinstance(Ly, list):
-            self.Ly = Ly
-            ylims = np.asarray([-Ly, Ly])
-        else:
-            self.Ly = abs(Ly[0]-Ly[1]) / 2
-            ylims = np.asarray([Ly[0], Ly[1]])
-
-        self.domainLimits = np.hstack((ylims, xlims))
+"""
+mutable struct CartesianMesh
+    
+    Lx::Float64
+    Ly::Float64
+    nx::Int
+    ny::Int
+    hx::Float64
+    hy::Float64
+    VertexCoor::Matrix{Float64}
+    NumberOfElts::Int
+    NumberofNodes::Int
+    EltArea::Float64
+    domainLimits::Vector{Float64}
 
 
-        # Check if the number of cells is odd to see if the origin would be at the mid point of a single cell
-        if nx % 2 == 0:
-            log.warning("Number of elements in x-direction are even. Using " + repr(nx+1) + " elements to have origin at a "
-                                                                                      "cell center...")
-            self.nx = nx+1
-        else:
-            self.nx = nx
+    function CartesianMesh(Lx::Float64, Ly::Float64, nx::Int, ny::Int, symmetric::Bool=false)
+        
+        @info "Creating mesh..." _group="PyFrac.mesh"
 
-        if ny % 2 == 0:
-            log.warning("Number of elements in y-direction are even. Using " + repr(ny+1) + " elements to have origin at a "
-                                                                                      "cell center...")
-            self.ny = ny+1
-        else:
-            self.ny = ny
+        if isa(Lx, Number)
+            Lx_val = Float64(Lx)
+            xlims = [-Lx, Lx]
+        else
+            Lx_val = abs(Lx[2] - Lx[1]) / 2
+            xlims = [Lx[1], Lx[2]]
+        end
 
-        self.hx = 2. * self.Lx / (self.nx - 1)
-        self.hy = 2. * self.Ly / (self.ny - 1)
+        if isa(Ly, Number)
+            Ly_val = Float64(Ly)
+            ylims = [-Ly, Ly]
+        else
+            Ly_val = abs(Ly[2] - Ly[1]) / 2
+            ylims = [Ly[1], Ly[2]]
+        end
 
-        x = np.linspace(self.domainLimits[2] - self.hx / 2., self.domainLimits[3] + self.hx / 2., self.nx + 1)
-        y = np.linspace(self.domainLimits[0] - self.hy / 2., self.domainLimits[1] + self.hy / 2., self.ny + 1)
+        domainLimits = [ylims[1], ylims[2], xlims[1], xlims[2]]
 
-        xv, yv = np.meshgrid(x, y)  # coordinates of the vertex of each elements
+        if nx % 2 == 0
+            @warn "Number of elements in x-direction are even. Using $(nx+1) elements to have origin at a cell center..."
+            nx += 1
+        end
 
-        a = np.resize(xv, ((self.nx + 1) * (self.ny + 1), 1))
-        b = np.resize(yv, ((self.nx + 1) * (self.ny + 1), 1))
+        if ny % 2 == 0
+            @warn "Number of elements in y-direction are even. Using $(ny+1) elements to have origin at a cell center..."
+            ny += 1
+        end
 
-        self.VertexCoor = np.reshape(np.stack((a, b), axis=-1), (len(a), 2))
+        hx = 2.0 * Lx_val / (nx - 1)
+        hy = 2.0 * Ly_val / (ny - 1)
 
-        self.NumberofNodes = (self.nx+1) * (self.ny+1)
-        self.NumberOfElts = self.nx * self.ny
-        self.EltArea = self.hx * self.hy
 
+        x = range(domainLimits[3] - hx/2, domainLimits[4] + hx/2, length=nx + 1)
+        y = range(domainLimits[1] - hy/2, domainLimits[2] + hy/2, length=ny + 1)
+        xv = repeat(x', outer=(ny + 1, 1))
+        yv = repeat(y, inner=(ny + 1, 1))
+
+        VertexCoor = hcat(vec(xv), vec(yv))
+
+        NumberofNodes = (nx + 1) * (ny + 1)
+        NumberOfElts = nx * ny
+        EltArea = hx * hy
 
         """
         We create a list of cell names thaht are colose to the boundary of the mesh. See the example below.
@@ -158,14 +151,15 @@ class CartesianMesh:
         |    |    |    |    |    |    |
         |____|____|____|____|____|____|            
         """
-        self.Frontlist=[]
-        self.Frontlist=self.Frontlist + list(range(self.nx+1,2*self.nx-1))
-        self.Frontlist=self.Frontlist + list(range((self.ny-3)*(self.nx)+self.nx + 1, (self.ny-3)*(self.nx)+2 * self.nx - 1))
-        for i in range(1,self.ny-3):
-            self.Frontlist.append(  self.nx+1+i*self.nx)
-            self.Frontlist.append(2*self.nx-2+i*self.nx)
-
-
+        
+        
+        Frontlist = Int[]
+        append!(Frontlist, (nx+1):(2*nx-1))
+        append!(Frontlist, ((ny-3)*nx + nx + 1):((ny-3)*nx + 2*nx - 1))
+        for i in 1:(ny-3)
+            push!(Frontlist, nx + 1 + i * nx)
+            push!(Frontlist, 2 * nx - 2 + i * nx)
+        end
 
         """
          Giving four neighbouring elements in the following order: [left,right,bottom,up]
@@ -177,19 +171,19 @@ class CartesianMesh:
         |      |bottom|     |
         |______|______|_____|
         """
-        Nei = np.zeros((self.NumberOfElts, 4), int)
-        for i in range(0, self.NumberOfElts):
-            Nei[i, :] = np.asarray(self.Neighbors(i, self.nx, self.ny))
-        self.NeiElements = Nei
-
+        NeiElements = zeros(Int, NumberOfElts, 4)
+        for i in 1:NumberOfElts
+            neighbors = Neighbors(i, nx, ny)
+            NeiElements[i, :] = neighbors
+        end
 
         """
          conn is the connectivity array giving four vertices of an element in the following order
          ______ ______ _____ 
         |      |      |     |
-        |______3______2_____|
+        |______4______3_____|
         |      |  i   |     |
-        |______0______1_____|
+        |______1______2_____|
         |      |      |     |
         |______|______|_____|
         """
@@ -205,57 +199,63 @@ class CartesianMesh:
 
         # connNodesElem is a connectivity array: for each node is listing the 4 elements that share that
         # connNodesEdges:
-        #            0
+        #            1
         #            |
-        #         1__o__3    o is the node and the order in  connNodesEdges is [vertical_top, horizotal_left, vertical_bottom, horizotal_right]
+        #         2__o__4    o is the node and the order in  connNodesEdges is [vertical_top, horizotal_left, vertical_bottom, horizotal_right]
         #            |
-        #            2
-        numberofedges = (2 * self.nx * self.ny + self.nx + self.ny)  # Peruzzo 2019
-        conn = np.empty([self.NumberOfElts, 4], dtype=int)
-        booleconnEdgesNodes = np.zeros([numberofedges, 1], dtype=int)  # Peruzzo 2019
-        connEdgesNodes = np.empty([numberofedges, 2], dtype=int)  # Peruzzo 2019
-        connElemEdges = np.empty([self.NumberOfElts, 4], dtype=int)  # Peruzzo 2019
-        connEdgesElem = np.full([numberofedges, 2], np.nan, dtype=int)  # Peruzzo 2019
-        connNodesEdges = np.full([self.NumberofNodes, 4], np.nan, dtype=int)  # Peruzzo 2019
-        connNodesElem = np.full([self.NumberofNodes, 4], np.nan, dtype=int)  # Peruzzo 2019
-        k = 0
-        for j in range(0, self.ny):
-            for i in range(0, self.nx):
-                conn[k, 0] = (i + j * (self.nx + 1))
-                conn[k, 1] = (i + 1) + j * (self.nx + 1)
-                conn[k, 2] = i + 1 + (j + 1) * (self.nx + 1)
-                conn[k, 3] = i + (j + 1) * (self.nx + 1)
-                connElemEdges[k, 0] = (j * (2 * self.nx + 1) + i)  # BottomEdge - Peruzzo 2019
-                connElemEdges[k, 1] = (j * (2 * self.nx + 1) + self.nx + i + 1)  # RightEdge  - Peruzzo 2019
-                connElemEdges[k, 2] = ((j + 1) * (2 * self.nx + 1) + i)  # topEdge    - Peruzzo 2019
-                connElemEdges[k, 3] = (j * (2 * self.nx + 1) + self.nx + i)  # LeftEdge   - Peruzzo 2019
-                connEdgesElem[connElemEdges[k, 0], :] = [k, Nei[k, 2]]  # Peruzzo 2019
-                connEdgesElem[connElemEdges[k, 1], :] = [k, Nei[k, 1]]  # Peruzzo 2019
-                connEdgesElem[connElemEdges[k, 2], :] = [k, Nei[k, 3]]  # Peruzzo 2019
-                connEdgesElem[connElemEdges[k, 3], :] = [k, Nei[k, 0]]  # Peruzzo 2019
+        #            3
+        
+        numberofedges = 2 * nx * ny + nx + ny                         # Edges amount (Peruzzo 2019)
+
+        # Матрицы связности
+        conn = Matrix{Int}(undef, NumberOfElts, 4)                    
+        booleconnEdgesNodes = zeros(Int, numberofedges, 1)           
+        connEdgesNodes = Matrix{Int}(undef, numberofedges, 2)         
+        connElemEdges = Matrix{Int}(undef, NumberOfElts, 4)           
+        connEdgesElem = fill(typemax(Int), numberofedges, 2)          
+        connNodesEdges = fill(typemax(Int), NumberofNodes, 4)         
+        connNodesElem = fill(typemax(Int), NumberofNodes, 4)
+        
+        k = 1
+        for j in 1:ny
+            for i in 1:nx
+                conn[k, 1] = (i + (j-1) * (nx + 1))
+                conn[k, 2] = (i + 1) + (j-1) * (nx + 1)
+                conn[k, 3] = i + 1 + j * (nx + 1)
+                conn[k, 4] = i + j * (nx + 1)
+                connElemEdges[k, 1] = ((j-1) * (2 * nx + 1) + i)  # BottomEdge - Peruzzo 2019
+                connElemEdges[k, 2] = ((j-1) * (2 * nx + 1) + nx + i + 1)  # RightEdge  - Peruzzo 2019
+                connElemEdges[k, 3] = (j * (2 * nx + 1) + i)  # topEdge    - Peruzzo 2019
+                connElemEdges[k, 4] = ((j-1) * (2 * nx + 1) + nx + i)  # LeftEdge   - Peruzzo 2019
+                connEdgesElem[connElemEdges[k, 1], :] = [k, NeiElements[k, 3]]  # Peruzzo 2019
+                connEdgesElem[connElemEdges[k, 2], :] = [k, NeiElements[k, 2]]  # Peruzzo 2019
+                connEdgesElem[connElemEdges[k, 3], :] = [k, NeiElements[k, 4]]  # Peruzzo 2019
+                connEdgesElem[connElemEdges[k, 4], :] = [k, NeiElements[k, 1]]  # Peruzzo 2019
                 # How neighbours are sorted within Nei: [left, right, bottom, up]
-                for s in range(0, 4):  # Peruzzo 2019
+                for s in 1:4  # Peruzzo 2019
                     index = connElemEdges[k, s]  # Peruzzo 2019
-                    if booleconnEdgesNodes[index] == 0:  # Peruzzo 2019
+                    if booleconnEdgesNodes[index] == 0  # Peruzzo 2019
                         booleconnEdgesNodes[index] = 1  # Peruzzo 2019
-                        if s < 3:  # Peruzzo 2019
+                        if s < 4  # Peruzzo 2019
                             connEdgesNodes[index, :] = [conn[k, s], conn[k, s + 1]]  # Peruzzo 2019
-                        else:  # Peruzzo 2019
-                            connEdgesNodes[index, :] = [conn[k, s], conn[k, 0]]  # Peruzzo 2019
-                if i == (self.nx - 1) or j == (self.ny - 1) or i == 0 or j == 0:  # start Peruzzo 2019
-                    if i == (self.nx - 1) and j != (self.ny - 1) and i != 0 and j != 0:  # right row of cells
+                        else  # Peruzzo 2019
+                            connEdgesNodes[index, :] = [conn[k, s], conn[k, 1]]  # Peruzzo 2019
+                    end
+                end
+                if i == nx || j == ny || i == 1 || j == 1  # start Peruzzo 2019
+                    if i == nx && j != ny && i != 1 && j != 1  # right row of cells
                         # for each top left node
-                        connNodesEdges[conn[k, 3], 0] = connElemEdges[k, 2]  # topedge
-                        connNodesEdges[conn[k, 3], 1] = connElemEdges[k, 3]  # leftedge
+                        connNodesEdges[conn[k, 4], 1] = connElemEdges[k, 3]  # topedge
+                        connNodesEdges[conn[k, 4], 2] = connElemEdges[k, 4]  # leftedge
                         # BottomEdgeOfTopLeftNeighboursElem
-                        connNodesEdges[conn[k, 3], 2] = ((j + 1) * (2 * self.nx + 1) + (i - 1))
+                        connNodesEdges[conn[k, 4], 3] = (j * (2 * nx + 1) + (i - 1))
                         # RightEdgeOfTopLeftNeighboursElem
-                        connNodesEdges[conn[k, 3], 3] = ((j + 1) * (2 * self.nx + 1) + self.nx + (i - 1) + 1)
-                        connNodesEdges[conn[k, 1], 0] = connElemEdges[k, 0]  # bottomedge
-                        connNodesEdges[conn[k, 1], 1] = connElemEdges[k, 1]  # rightedge
+                        connNodesEdges[conn[k, 4], 4] = (j * (2 * nx + 1) + nx + (i - 1) + 1)
+                        connNodesEdges[conn[k, 2], 1] = connElemEdges[k, 1]  # bottomedge
+                        connNodesEdges[conn[k, 2], 2] = connElemEdges[k, 2]  # rightedge
                         # RightEdgeOfBottomNeighboursElem
-                        connNodesEdges[conn[k, 1], 2] = ((j - 1) * (2 * self.nx + 1) + self.nx + i + 1)
-                        connNodesEdges[conn[k, 1], 3] = connElemEdges[k, 0]  # bottomedge #repeated
+                        connNodesEdges[conn[k, 2], 3] = ((j - 2) * (2 * nx + 1) + nx + i + 1)
+                        connNodesEdges[conn[k, 2], 4] = connElemEdges[k, 1]  # bottomedge #repeated
                         # connNodesElem:
                         #    |   |
                         # ___a___o
@@ -266,29 +266,29 @@ class CartesianMesh:
                         # note: NeiElements(ndarray): [left, right,bottom, up]
                         #
                         # node b (comments with respect to the node)
-                        connNodesElem[conn[k, 1], 0] = Nei[k, 2]  # element: bottom left
-                        connNodesElem[conn[k, 1], 1] = Nei[k, 2]  # element: bottom right #repeated
-                        connNodesElem[conn[k, 1], 2] = Nei[k, 2]  # element: top right #repeated
-                        connNodesElem[conn[k, 1], 3] = k  # element: top left (current k)
+                        connNodesElem[conn[k, 2], 1] = NeiElements[k, 3]  # element: bottom left
+                        connNodesElem[conn[k, 2], 2] = NeiElements[k, 3]  # element: bottom right #repeated
+                        connNodesElem[conn[k, 2], 3] = NeiElements[k, 3]  # element: top right #repeated
+                        connNodesElem[conn[k, 2], 4] = k  # element: top left (current k)
                         # node a (comments with respect to the node)
-                        connNodesElem[conn[k, 3], 0] = Nei[k, 0]  # element: bottom left
-                        connNodesElem[conn[k, 3], 1] = k  # element: bottom right (current k)
-                        connNodesElem[conn[k, 3], 2] = Nei[k, 3]  # element: top right
-                        connNodesElem[conn[k, 3], 3] = Nei[k - 1, 3]  # element: top left
+                        connNodesElem[conn[k, 4], 1] = NeiElements[k, 1]  # element: bottom left
+                        connNodesElem[conn[k, 4], 2] = k  # element: bottom right (current k)
+                        connNodesElem[conn[k, 4], 3] = NeiElements[k, 4]  # element: top right
+                        connNodesElem[conn[k, 4], 4] = NeiElements[k - 1, 4]  # element: top left
 
-                    elif i != (self.nx - 1) and j == (self.ny - 1) and i != 0 and j != 0:  # top row of cells
+                    elseif i != nx && j == ny && i != 1 && j != 1  # top row of cells
                         # for each bottom left node
-                        connNodesEdges[conn[k, 0], 0] = connElemEdges[k, 0]  # bottomedge
-                        connNodesEdges[conn[k, 0], 1] = connElemEdges[k, 3]  # leftedge
+                        connNodesEdges[conn[k, 1], 1] = connElemEdges[k, 1]  # bottomedge
+                        connNodesEdges[conn[k, 1], 2] = connElemEdges[k, 4]  # leftedge
                         # TopEdgeOfBottomLeftNeighboursElem
-                        connNodesEdges[conn[k, 0], 2] = (((j - 1) + 1) * (2 * self.nx + 1) + (i - 1))
+                        connNodesEdges[conn[k, 1], 3] = (((j - 2) + 1) * (2 * nx + 1) + (i - 1))
                         # RightEdgeOfBottomLeftNeighboursElem
-                        connNodesEdges[conn[k, 0], 3] = ((j - 1) * (2 * self.nx + 1) + self.nx + (i - 1) + 1)
-                        connNodesEdges[conn[k, 2], 0] = connElemEdges[k, 2]  # topedge
-                        connNodesEdges[conn[k, 2], 1] = connElemEdges[k, 1]  # rightedge
+                        connNodesEdges[conn[k, 1], 4] = ((j - 2) * (2 * nx + 1) + nx + (i - 1) + 1)
+                        connNodesEdges[conn[k, 3], 1] = connElemEdges[k, 3]  # topedge
+                        connNodesEdges[conn[k, 3], 2] = connElemEdges[k, 2]  # rightedge
                         # TopEdgeOfRightNeighboursElem
-                        connNodesEdges[conn[k, 2], 2] = ((j + 1) * (2 * self.nx + 1) + (i + 1))
-                        connNodesEdges[conn[k, 2], 3] = connElemEdges[k, 1]  # rightedge #repeated
+                        connNodesEdges[conn[k, 3], 3] = (j * (2 * nx + 1) + (i + 1))
+                        connNodesEdges[conn[k, 3], 4] = connElemEdges[k, 2]  # rightedge #repeated
                         # connNodesElem:
                         # ___o___b___
                         #    |   |
@@ -298,29 +298,29 @@ class CartesianMesh:
                         # note: NeiElements(ndarray): [left, right,bottom, up]
                         #
                         # node a (comments with respect to the node)
-                        connNodesElem[conn[k, 0], 0] = Nei[k - 1, 2]  # element: bottom left #repeated
-                        connNodesElem[conn[k, 0], 1] = Nei[k, 2]  # element: bottom right #repeated
-                        connNodesElem[conn[k, 0], 2] = k  # element: top right (current k)
-                        connNodesElem[conn[k, 0], 3] = Nei[k, 0]  # element: top left
+                        connNodesElem[conn[k, 1], 1] = NeiElements[k - 1, 3]  # element: bottom left #repeated
+                        connNodesElem[conn[k, 1], 2] = NeiElements[k, 3]  # element: bottom right #repeated
+                        connNodesElem[conn[k, 1], 3] = k  # element: top right (current k)
+                        connNodesElem[conn[k, 1], 4] = NeiElements[k, 1]  # element: top left
                         # node b (comments with respect to the node)
-                        connNodesElem[conn[k, 2], 0] = k  # element: bottom left (current k)
-                        connNodesElem[conn[k, 2], 1] = Nei[k, 1]  # element: bottom right
-                        connNodesElem[conn[k, 2], 2] = Nei[k + 1, 3]  # element: top right
-                        connNodesElem[conn[k, 2], 3] = Nei[k, 3]  # element: top left
+                        connNodesElem[conn[k, 3], 1] = k  # element: bottom left (current k)
+                        connNodesElem[conn[k, 3], 2] = NeiElements[k, 2]  # element: bottom right
+                        connNodesElem[conn[k, 3], 3] = NeiElements[k + 1, 4]  # element: top right
+                        connNodesElem[conn[k, 3], 4] = NeiElements[k, 4]  # element: top left
 
-                    elif i != (self.nx - 1) and j != (self.ny - 1) and i == 0 and j != 0:  # left row of cells
+                    elseif i != nx && j != ny && i == 1 && j != 1  # left row of cells
                         # for each bottom right node
-                        connNodesEdges[conn[k, 1], 0] = connElemEdges[k, 0]  # bottomedge
-                        connNodesEdges[conn[k, 1], 1] = connElemEdges[k, 1]  # rightedge
+                        connNodesEdges[conn[k, 2], 1] = connElemEdges[k, 1]  # bottomedge
+                        connNodesEdges[conn[k, 2], 2] = connElemEdges[k, 2]  # rightedge
                         # TopEdgeOfBottomRightNeighboursElem
-                        connNodesEdges[conn[k, 1], 2] = (((j - 1) + 1) * (2 * self.nx + 1) + (i + 1))
+                        connNodesEdges[conn[k, 2], 3] = (((j - 2) + 1) * (2 * nx + 1) + (i + 1))
                         # LeftEdgeOfBottomRightNeighboursElem
-                        connNodesEdges[conn[k, 1], 3] = ((j - 1) * (2 * self.nx + 1) + self.nx + (i + 1))
-                        connNodesEdges[conn[k, 3], 0] = connElemEdges[k, 2]  # topedge
-                        connNodesEdges[conn[k, 3], 1] = connElemEdges[k, 3]  # leftedge
+                        connNodesEdges[conn[k, 2], 4] = ((j - 2) * (2 * nx + 1) + nx + (i + 1))
+                        connNodesEdges[conn[k, 4], 1] = connElemEdges[k, 3]  # topedge
+                        connNodesEdges[conn[k, 4], 2] = connElemEdges[k, 4]  # leftedge
                         # LeftEdgeOfTopNeighboursElem
-                        connNodesEdges[conn[k, 3], 2] = ((j + 1) * (2 * self.nx + 1) + self.nx + i)
-                        connNodesEdges[conn[k, 3], 3] = connElemEdges[k, 2]  # topedge #repeated
+                        connNodesEdges[conn[k, 4], 3] = (j * (2 * nx + 1) + nx + i)
+                        connNodesEdges[conn[k, 4], 4] = connElemEdges[k, 3]  # topedge #repeated
                         # connNodesElem:
                         # |   |
                         # a___o___
@@ -331,29 +331,29 @@ class CartesianMesh:
                         # note: NeiElements(ndarray): [left, right,bottom, up]
                         #
                         # node b (comments with respect to the node)
-                        connNodesElem[conn[k, 1], 0] = Nei[k, 2]  # element: bottom left
-                        connNodesElem[conn[k, 1], 1] = Nei[k + 1, 2]  # element: bottom right
-                        connNodesElem[conn[k, 1], 2] = Nei[k, 1]  # element: top right
-                        connNodesElem[conn[k, 1], 3] = k  # element: top left  (current k)
+                        connNodesElem[conn[k, 2], 1] = NeiElements[k, 3]  # element: bottom left
+                        connNodesElem[conn[k, 2], 2] = NeiElements[k + 1, 3]  # element: bottom right
+                        connNodesElem[conn[k, 2], 3] = NeiElements[k, 2]  # element: top right
+                        connNodesElem[conn[k, 2], 4] = k  # element: top left  (current k)
                         # node a (comments with respect to the node)
-                        connNodesElem[conn[k, 3], 0] = k  # element: bottom left  #repeated
-                        connNodesElem[conn[k, 3], 1] = k  # element: bottom right (current k)
-                        connNodesElem[conn[k, 3], 2] = Nei[k, 3]  # element: top right
-                        connNodesElem[conn[k, 3], 3] = Nei[k, 3]  # element: top left  #repeated
+                        connNodesElem[conn[k, 4], 1] = k  # element: bottom left  #repeated
+                        connNodesElem[conn[k, 4], 2] = k  # element: bottom right (current k)
+                        connNodesElem[conn[k, 4], 3] = NeiElements[k, 4]  # element: top right
+                        connNodesElem[conn[k, 4], 4] = NeiElements[k, 4]  # element: top left  #repeated
 
-                    elif i != (self.nx - 1) and j != (self.ny - 1) and i != 0 and j == 0:  # bottom row of cells
+                    elseif i != nx && j != ny && i != 1 && j == 1  # bottom row of cells
                         # for each top right node
-                        connNodesEdges[conn[k, 2], 0] = connElemEdges[k, 2]  # topedge
-                        connNodesEdges[conn[k, 2], 1] = connElemEdges[k, 1]  # rightedge
+                        connNodesEdges[conn[k, 3], 1] = connElemEdges[k, 3]  # topedge
+                        connNodesEdges[conn[k, 3], 2] = connElemEdges[k, 2]  # rightedge
                         # BottomEdgeOfTopRightNeighboursElem
-                        connNodesEdges[conn[k, 2], 2] = ((j + 1) * (2 * self.nx + 1) + (i + 1))
+                        connNodesEdges[conn[k, 3], 3] = ((j) * (2 * nx + 1) + (i + 1))
                         # LeftEdgeOfTopRightNeighboursElem
-                        connNodesEdges[conn[k, 2], 3] = ((j + 1) * (2 * self.nx + 1) + self.nx + (i + 1))
-                        connNodesEdges[conn[k, 0], 0] = connElemEdges[k, 0]  # bottomedge
-                        connNodesEdges[conn[k, 0], 1] = connElemEdges[k, 3]  # leftedge
+                        connNodesEdges[conn[k, 3], 4] = ((j) * (2 * nx + 1) + nx + (i + 1))
+                        connNodesEdges[conn[k, 1], 1] = connElemEdges[k, 1]  # bottomedge
+                        connNodesEdges[conn[k, 1], 2] = connElemEdges[k, 4]  # leftedge
                         # BottomEdgeOfLeftNeighboursElem
-                        connNodesEdges[conn[k, 0], 2] = (j * (2 * self.nx + 1) + (i - 1))
-                        connNodesEdges[conn[k, 0], 3] = connElemEdges[k, 3]  # leftedge # repeated
+                        connNodesEdges[conn[k, 1], 3] = ((j-1) * (2 * nx + 1) + (i - 1))
+                        connNodesEdges[conn[k, 1], 4] = connElemEdges[k, 4]  # leftedge # repeated
                         # connNodesElem:
                         #    |   |
                         # ___o___b___
@@ -363,26 +363,25 @@ class CartesianMesh:
                         # note: NeiElements(ndarray): [left, right,bottom, up]
                         #
                         # node a (comments with respect to the node)
-                        connNodesElem[conn[k, 0], 0] = k  # element: bottom left #repeated
-                        connNodesElem[conn[k, 0], 1] = k  # element: bottom right #repeated
-                        connNodesElem[conn[k, 0], 2] = k  # element: top right (current k)
-                        connNodesElem[conn[k, 0], 3] = Nei[k, 0]  # element: top left
+                        connNodesElem[conn[k, 1], 1] = k  # element: bottom left #repeated
+                        connNodesElem[conn[k, 1], 2] = k  # element: bottom right #repeated
+                        connNodesElem[conn[k, 1], 3] = k  # element: top right (current k)
+                        connNodesElem[conn[k, 1], 4] = NeiElements[k, 1]  # element: top left
                         # node b (comments with respect to the node)
-                        connNodesElem[conn[k, 2], 0] = k  # element: bottom left (current k)
-                        connNodesElem[conn[k, 2], 1] = Nei[k, 1]  # element: bottom right
-                        connNodesElem[conn[k, 2], 2] = Nei[k + 1, 1]  # element: top right
-                        connNodesElem[conn[k, 2], 3] = Nei[k, 3]  # element: top left
+                        connNodesElem[conn[k, 3], 1] = k  # element: bottom left (current k)
+                        connNodesElem[conn[k, 3], 2] = NeiElements[k, 2]  # element: bottom right
+                        connNodesElem[conn[k, 3], 3] = NeiElements[k + 1, 2]  # element: top right
+                        connNodesElem[conn[k, 3], 4] = NeiElements[k, 4]  # element: top left
 
-                    elif i == (self.nx - 1) and j == (self.ny - 1):  # corner cell: top right
-                        connNodesEdges[conn[k, 2], 0] = connElemEdges[k, 2]  # topedge
-                        connNodesEdges[conn[k, 2], 1] = connElemEdges[k, 1]  # rightedge
-                        connNodesEdges[conn[k, 2], 2] = connElemEdges[k, 2]  # topedge   #repeated
-                        connNodesEdges[conn[k, 2], 3] = connElemEdges[k, 1]  # rightedge #repeated
-                        connNodesEdges[conn[k, 1], 0] = connElemEdges[k, 0]  # bottomedge
-                        connNodesEdges[conn[k, 1], 1] = connElemEdges[k, 1]  # rightedge
-                        connNodesEdges[conn[k, 1], 2] = (
-                                    (j - 1) * (2 * self.nx + 1) + self.nx + i + 1)  # RightEdgeBottomCell
-                        connNodesEdges[conn[k, 1], 3] = connElemEdges[k, 0]  # bottomedge  #repeated
+                    elseif i == nx && j == ny  # corner cell: top right
+                        connNodesEdges[conn[k, 3], 1] = connElemEdges[k, 3]  # topedge
+                        connNodesEdges[conn[k, 3], 2] = connElemEdges[k, 2]  # rightedge
+                        connNodesEdges[conn[k, 3], 3] = connElemEdges[k, 3]  # topedge   #repeated
+                        connNodesEdges[conn[k, 3], 4] = connElemEdges[k, 2]  # rightedge #repeated
+                        connNodesEdges[conn[k, 2], 1] = connElemEdges[k, 1]  # bottomedge
+                        connNodesEdges[conn[k, 2], 2] = connElemEdges[k, 2]  # rightedge
+                        connNodesEdges[conn[k, 2], 3] = ((j - 2) * (2 * nx + 1) + nx + i + 1)  # RightEdgeBottomCell
+                        connNodesEdges[conn[k, 2], 4] = connElemEdges[k, 1]  # bottomedge  #repeated
                         # connNodesElem:
                         # ___o___b
                         #    |   |
@@ -392,25 +391,25 @@ class CartesianMesh:
                         # note: NeiElements(ndarray): [left, right,bottom, up]
                         #
                         # node a (comments with respect to the node)
-                        connNodesElem[conn[k, 1], 0] = Nei[k, 2]  # element: bottom left
-                        connNodesElem[conn[k, 1], 1] = k  # element: bottom right #repeated
-                        connNodesElem[conn[k, 1], 2] = k  # element: top right #repeated
-                        connNodesElem[conn[k, 1], 3] = k  # element: top left (current k)
+                        connNodesElem[conn[k, 2], 1] = NeiElements[k, 3]  # element: bottom left
+                        connNodesElem[conn[k, 2], 2] = k  # element: bottom right #repeated
+                        connNodesElem[conn[k, 2], 3] = k  # element: top right #repeated
+                        connNodesElem[conn[k, 2], 4] = k  # element: top left (current k)
                         # node b (comments with respect to the node)
-                        connNodesElem[conn[k, 2], 0] = k  # element: bottom left (current k)
-                        connNodesElem[conn[k, 2], 1] = k  # element: bottom right #repeated
-                        connNodesElem[conn[k, 2], 2] = k  # element: top right  #repeated
-                        connNodesElem[conn[k, 2], 3] = k  # element: top left  #repeated
+                        connNodesElem[conn[k, 3], 1] = k  # element: bottom left (current k)
+                        connNodesElem[conn[k, 3], 2] = k  # element: bottom right #repeated
+                        connNodesElem[conn[k, 3], 3] = k  # element: top right  #repeated
+                        connNodesElem[conn[k, 3], 4] = k  # element: top left  #repeated
 
-                    elif i == (self.nx - 1) and j == 0:  # corner cell: bottom right
-                        connNodesEdges[conn[k, 1], 0] = connElemEdges[k, 0]  # bottomedge
-                        connNodesEdges[conn[k, 1], 1] = connElemEdges[k, 1]  # rightedge
-                        connNodesEdges[conn[k, 1], 2] = connElemEdges[k, 0]  # bottomedge #repeated
-                        connNodesEdges[conn[k, 1], 3] = connElemEdges[k, 1]  # rightedge  #repeated
-                        connNodesEdges[conn[k, 0], 0] = connElemEdges[k, 0]  # bottomedge
-                        connNodesEdges[conn[k, 0], 1] = connElemEdges[k, 3]  # leftedge
-                        connNodesEdges[conn[k, 0], 2] = (j * (2 * self.nx + 1) + (i - 1))  # BottomEdgeLeftCell
-                        connNodesEdges[conn[k, 0], 3] = connElemEdges[k, 3]  # leftedge  #repeated
+                    elseif i == nx && j == 1  # corner cell: bottom right
+                        connNodesEdges[conn[k, 2], 1] = connElemEdges[k, 1]  # bottomedge
+                        connNodesEdges[conn[k, 2], 2] = connElemEdges[k, 2]  # rightedge
+                        connNodesEdges[conn[k, 2], 3] = connElemEdges[k, 1]  # bottomedge #repeated
+                        connNodesEdges[conn[k, 2], 4] = connElemEdges[k, 2]  # rightedge  #repeated
+                        connNodesEdges[conn[k, 1], 1] = connElemEdges[k, 1]  # bottomedge
+                        connNodesEdges[conn[k, 1], 2] = connElemEdges[k, 4]  # leftedge
+                        connNodesEdges[conn[k, 1], 3] = ((j-1) * (2 * nx + 1) + (i - 1))  # BottomEdgeLeftCell
+                        connNodesEdges[conn[k, 1], 4] = connElemEdges[k, 4]  # leftedge  #repeated
                         # connNodesElem:
                         #    |   |
                         # ___o___o
@@ -420,25 +419,25 @@ class CartesianMesh:
                         # note: NeiElements(ndarray): [left, right,bottom, up]
                         #
                         # node a (comments with respect to the node)
-                        connNodesElem[conn[k, 0], 0] = k  # element: bottom left #repeated
-                        connNodesElem[conn[k, 0], 1] = k  # element: bottom right #repeated
-                        connNodesElem[conn[k, 0], 2] = k  # element: top right (current k)
-                        connNodesElem[conn[k, 0], 3] = Nei[k, 0]  # element: top left
+                        connNodesElem[conn[k, 1], 1] = k  # element: bottom left #repeated
+                        connNodesElem[conn[k, 1], 2] = k  # element: bottom right #repeated
+                        connNodesElem[conn[k, 1], 3] = k  # element: top right (current k)
+                        connNodesElem[conn[k, 1], 4] = NeiElements[k, 1]  # element: top left
                         # node b (comments with respect to the node)
-                        connNodesElem[conn[k, 1], 0] = k  # element: bottom left #repeated
-                        connNodesElem[conn[k, 1], 1] = k  # element: bottom right #repeated
-                        connNodesElem[conn[k, 1], 2] = k  # element: top right  #repeated
-                        connNodesElem[conn[k, 1], 3] = k  # element: top left  (current k)
+                        connNodesElem[conn[k, 2], 1] = k  # element: bottom left #repeated
+                        connNodesElem[conn[k, 2], 2] = k  # element: bottom right #repeated
+                        connNodesElem[conn[k, 2], 3] = k  # element: top right  #repeated
+                        connNodesElem[conn[k, 2], 4] = k  # element: top left  (current k)
 
-                    elif i == 0 and j == (self.ny - 1):  # corner cell: top left
-                        connNodesEdges[conn[k, 3], 0] = connElemEdges[k, 2]  # topedge
-                        connNodesEdges[conn[k, 3], 1] = connElemEdges[k, 3]  # leftedge
-                        connNodesEdges[conn[k, 3], 2] = connElemEdges[k, 2]  # topedge #repeated
-                        connNodesEdges[conn[k, 3], 3] = connElemEdges[k, 3]  # leftedge #repeated
-                        connNodesEdges[conn[k, 2], 0] = connElemEdges[k, 2]  # topedge
-                        connNodesEdges[conn[k, 2], 1] = connElemEdges[k, 1]  # rightedge
-                        connNodesEdges[conn[k, 2], 2] = ((j + 1) * (2 * self.nx + 1) + (i + 1))  # TopEdgeRightCell
-                        connNodesEdges[conn[k, 2], 3] = connElemEdges[k, 1]  # rightedge #repeated
+                    elseif i == 1 && j == ny  # corner cell: top left
+                        connNodesEdges[conn[k, 4], 1] = connElemEdges[k, 3]  # topedge
+                        connNodesEdges[conn[k, 4], 2] = connElemEdges[k, 4]  # leftedge
+                        connNodesEdges[conn[k, 4], 3] = connElemEdges[k, 3]  # topedge #repeated
+                        connNodesEdges[conn[k, 4], 4] = connElemEdges[k, 4]  # leftedge #repeated
+                        connNodesEdges[conn[k, 3], 1] = connElemEdges[k, 3]  # topedge
+                        connNodesEdges[conn[k, 3], 2] = connElemEdges[k, 2]  # rightedge
+                        connNodesEdges[conn[k, 3], 3] = (j * (2 * nx + 1) + (i + 1))  # TopEdgeRightCell
+                        connNodesEdges[conn[k, 3], 4] = connElemEdges[k, 2]  # rightedge #repeated
                         # connNodesElem:
                         # b___a___
                         # |   |
@@ -448,25 +447,25 @@ class CartesianMesh:
                         # note: NeiElements(ndarray): [left, right,bottom, up]
                         #
                         # node a (comments with respect to the node)
-                        connNodesElem[conn[k, 2], 0] = k  # element: bottom left (current k)
-                        connNodesElem[conn[k, 2], 1] = Nei[k, 1]  # element: bottom right
-                        connNodesElem[conn[k, 2], 2] = k  # element: top right #repeated
-                        connNodesElem[conn[k, 2], 3] = k  # element: top left #repeated
+                        connNodesElem[conn[k, 3], 1] = k  # element: bottom left (current k)
+                        connNodesElem[conn[k, 3], 2] = NeiElements[k, 2]  # element: bottom right
+                        connNodesElem[conn[k, 3], 3] = k  # element: top right #repeated
+                        connNodesElem[conn[k, 3], 4] = k  # element: top left #repeated
                         # node b (comments with respect to the node)
-                        connNodesElem[conn[k, 3], 0] = k  # element: bottom left #repeated
-                        connNodesElem[conn[k, 3], 1] = k  # element: bottom right (current k)
-                        connNodesElem[conn[k, 3], 2] = k  # element: top right  #repeated
-                        connNodesElem[conn[k, 3], 3] = k  # element: top left  #repeated
+                        connNodesElem[conn[k, 4], 1] = k  # element: bottom left #repeated
+                        connNodesElem[conn[k, 4], 2] = k  # element: bottom right (current k)
+                        connNodesElem[conn[k, 4], 3] = k  # element: top right  #repeated
+                        connNodesElem[conn[k, 4], 4] = k  # element: top left  #repeated
 
-                    elif i == 0 and j == 0:  # corner cell: bottom left
-                        connNodesEdges[conn[k, 0], 0] = connElemEdges[k, 0]  # bottomedge
-                        connNodesEdges[conn[k, 0], 1] = connElemEdges[k, 3]  # leftedge
-                        connNodesEdges[conn[k, 0], 2] = connElemEdges[k, 0]  # bottomedge #repeated
-                        connNodesEdges[conn[k, 0], 3] = connElemEdges[k, 3]  # leftedge #repeated
-                        connNodesEdges[conn[k, 3], 0] = connElemEdges[k, 2]  # topedge
-                        connNodesEdges[conn[k, 3], 1] = connElemEdges[k, 3]  # leftedge
-                        connNodesEdges[conn[k, 3], 2] = ((j + 1) * (2 * self.nx + 1) + self.nx + i)  # LeftEdgeTopCell
-                        connNodesEdges[conn[k, 3], 3] = connElemEdges[k, 2]  # topedge #repeated
+                    elseif i == 1 && j == 1  # corner cell: bottom left
+                        connNodesEdges[conn[k, 1], 1] = connElemEdges[k, 1]  # bottomedge
+                        connNodesEdges[conn[k, 1], 2] = connElemEdges[k, 4]  # leftedge
+                        connNodesEdges[conn[k, 1], 3] = connElemEdges[k, 1]  # bottomedge #repeated
+                        connNodesEdges[conn[k, 1], 4] = connElemEdges[k, 4]  # leftedge #repeated
+                        connNodesEdges[conn[k, 4], 1] = connElemEdges[k, 3]  # topedge
+                        connNodesEdges[conn[k, 4], 2] = connElemEdges[k, 4]  # leftedge
+                        connNodesEdges[conn[k, 4], 3] = (j * (2 * nx + 1) + nx + i)  # LeftEdgeTopCell
+                        connNodesEdges[conn[k, 4], 4] = connElemEdges[k, 3]  # topedge #repeated
                         # connNodesElem:
                         #
                         # |   |
@@ -477,222 +476,280 @@ class CartesianMesh:
                         # note: NeiElements(ndarray): [left, right,bottom, up]
                         #
                         # node a (comments with respect to the node)
-                        connNodesElem[conn[k, 3], 0] = k  # element: bottom left #repeated
-                        connNodesElem[conn[k, 3], 1] = k  # element: bottom right (current k)
-                        connNodesElem[conn[k, 3], 2] = Nei[k, 3]  # element: top right #repeated
-                        connNodesElem[conn[k, 3], 3] = k  # element: top left #repeated
+                        connNodesElem[conn[k, 4], 1] = k  # element: bottom left #repeated
+                        connNodesElem[conn[k, 4], 2] = k  # element: bottom right (current k)
+                        connNodesElem[conn[k, 4], 3] = NeiElements[k, 4]  # element: top right #repeated
+                        connNodesElem[conn[k, 4], 4] = k  # element: top left #repeated
                         # node b (comments with respect to the node)
-                        connNodesElem[conn[k, 0], 0] = k  # element: bottom left #repeated
-                        connNodesElem[conn[k, 0], 1] = k  # element: bottom right #repeated
-                        connNodesElem[conn[k, 0], 2] = k  # element: top right  (current k)
-                        connNodesElem[conn[k, 0], 3] = k  # element: top left  #repeated
-                else:
-                    node = conn[k, 1]  # for each bottom right node of the elements not near the mesh boundaryes
-                    connNodesEdges[node, 0] = connElemEdges[k, 1]  # rightedge
-                    connNodesEdges[node, 1] = connElemEdges[k, 0]  # bottomedge
-                    connNodesEdges[node, 2] = connElemEdges[Nei[k, 2], 1]  # leftedgeBottomNeighboursElem
-                    connNodesEdges[node, 3] = connElemEdges[Nei[k + 1, 2], 2]  # bottomedgeLeftNeighboursElem
+                        connNodesElem[conn[k, 1], 1] = k  # element: bottom left #repeated
+                        connNodesElem[conn[k, 1], 2] = k  # element: bottom right #repeated
+                        connNodesElem[conn[k, 1], 3] = k  # element: top right  (current k)
+                        connNodesElem[conn[k, 1], 4] = k  # element: top left  #repeated
+                    end
+                else
+                    node = conn[k, 2]  # for each bottom right node of the elements not near the mesh boundaryes
+                    connNodesEdges[node, 1] = connElemEdges[k, 2]  # rightedge
+                    connNodesEdges[node, 2] = connElemEdges[k, 1]  # bottomedge
+                    connNodesEdges[node, 3] = connElemEdges[NeiElements[k, 3], 2]  # leftedgeBottomNeighboursElem
+                    connNodesEdges[node, 4] = connElemEdges[NeiElements[k + 1, 3], 3]  # bottomedgeLeftNeighboursElem
                     # connNodesElem:
                     # note:  NeiElements(ndarray): [left, right,bottom, up]
                     # o___o___o
-                    # | 3k| 2 |     k is the current element
+                    # | 4k| 3 |     k is the current element
                     # o___x___o     x is the current node
-                    # | 0 | 1 |
+                    # | 1 | 2 |
                     # o___o___o
                     #
-                    connNodesElem[node, 0] = Nei[k, 2]  # element: bottom left with respect to the node x
-                    connNodesElem[node, 1] = Nei[k + 1, 2]  # element: bottom right with respect to the node x
-                    connNodesElem[node, 2] = Nei[k, 1]  # element: top right  with respect to the node x
-                    connNodesElem[node, 3] = k  # element: top left (current k) with respect to the node x
+                    connNodesElem[node, 1] = NeiElements[k, 3]  # element: bottom left with respect to the node x
+                    connNodesElem[node, 2] = NeiElements[k + 1, 3]  # element: bottom right with respect to the node x
+                    connNodesElem[node, 3] = NeiElements[k, 2]  # element: top right  with respect to the node x
+                    connNodesElem[node, 4] = k  # element: top left (current k) with respect to the node x
                     # end Peruzzo 2019
+                end
 
-                k = k + 1
+        k = k + 1
 
-        self.Connectivity = conn
-        self.Connectivityelemedges = connElemEdges  # Peruzzo 2019
-        self.Connectivityedgeselem = connEdgesElem  # Peruzzo 2019
-        self.Connectivityedgesnodes = connEdgesNodes  # Peruzzo 2019
-        self.Connectivitynodesedges = connNodesEdges  # Peruzzo 2019
-        self.Connectivitynodeselem = connNodesElem  # Peruzzo 2019
+        Connectivity = conn
+        Connectivityelemedges = connElemEdges  # Peruzzo 2019
+        Connectivityedgeselem = connEdgesElem  # Peruzzo 2019
+        Connectivityedgesnodes = connEdgesNodes  # Peruzzo 2019
+        Connectivitynodesedges = connNodesEdges  # Peruzzo 2019
+        Connectivitynodeselem = connNodesElem  # Peruzzo 2019
 
         # coordinates of the center of the mesh
-        centerMesh = np.asarray([(self.domainLimits[2] + self.domainLimits[3])/2,
-                                 (self.domainLimits[1] + self.domainLimits[0])/2])
+        centerMesh = [(domainLimits[3] + domainLimits[4])/2, (domainLimits[2] + domainLimits[1])/2]
 
         # coordinates of the center of the elements
-        CoorMid = np.empty([self.NumberOfElts, 2], dtype=float)
-        for e in range(0, self.NumberOfElts):
-            t = np.reshape(self.VertexCoor[conn[e]], (4, 2))
-            CoorMid[e] = np.mean(t, axis=0)
-        self.CenterCoor = CoorMid
-
-        self.distCenter = ((CoorMid[:, 0] - centerMesh[0]) ** 2 + (CoorMid[:, 1] - centerMesh[1]) ** 2) ** 0.5
-
-
-
+        CoorMid = Matrix{Float64}(undef, NumberOfElts, 2)
+        for e in 1:NumberOfElts
+            vertex_indices = conn[e, :]
+            vertices = VertexCoor[vertex_indices, :]
+            CoorMid[e, :] = vec(mean(vertices, dims=1))
+        end
+        CenterCoor = CoorMid
+        distCenter = sqrt.((CoorMid[:, 1] .- centerMesh[1]) .^ 2 .+ (CoorMid[:, 2] .- centerMesh[2]) .^ 2)
         # the element in the center (used for fluid injection)
         # todo: No it is not necessarily where we inject!
-        self.CenterElts = np.intersect1d(np.where(abs(self.CenterCoor[:, 0] - centerMesh[0]) < self.hx/2),
-                                         np.where(abs(self.CenterCoor[:, 1] - centerMesh[1]) < self.hy/2))
-        if len(self.CenterElts) != 1:
-            self.CenterElts = self.NumberOfElts / 2
-            log.debug("Mesh with no center element. To be looked into")
-            #todo
-            #raise ValueError("Mesh with no center element. To be looked into")
+        center_x_condition = findall(abs.(CenterCoor[:, 1] .- centerMesh[1]) .< hx/2)
+        center_y_condition = findall(abs.(CenterCoor[:, 2] .- centerMesh[2]) .< hy/2)
+        CenterElts = intersect(center_x_condition, center_y_condition)
 
-        if symmetric:
-            self.corresponding = corresponding_elements_in_symmetric(self)
-            self.symmetricElts = get_symetric_elements(self, np.arange(self.NumberOfElts))
-            self.activeSymtrc, self.posQdrnt, self.boundary_x, self.boundary_y = get_active_symmetric_elements(self)
+        if length(CenterElts) != 1
+            CenterElts = Int(NumberOfElts / 2)
+            @debug "Mesh with no center element. To be looked into"
+            # throw(ErrorException("Mesh with no center element. To be looked into"))
+        end
+        if symmetric
+            corresponding = corresponding_elements_in_symmetric(mesh)
+            symmetricElts = get_symmetric_elements(mesh, 1:NumberOfElts)
+            activeSymtrc, posQdrnt, boundary_x, boundary_y = get_active_symmetric_elements(mesh)
+            
+            volWeights = fill(4.0f0, length(activeSymtrc))
+            volWeights[length(posQdrnt)+1:end-1] .= 2.0f0
+            volWeights[end] = 1.0f0
+        else
+            corresponding = Int[]
+            symmetricElts = Matrix{Int}(undef, 0, 0)
+            activeSymtrc = Int[]
+            posQdrnt = Int[]
+            boundary_x = Int[]
+            boundary_y = Int[]
+            volWeights = Float32[]
+        end
 
-            self.volWeights = np.full((len(self.activeSymtrc), ), 4., dtype=np.float32)
-            self.volWeights[len(self.posQdrnt): -1] = 2.
-            self.volWeights[-1] = 1.
+        new(Lx_val, Ly_val, nx, ny, hx, hy, NumberOfElts, NumberofNodes, EltArea, domainLimits,
+            VertexCoor, CenterCoor, Connectivity, NeiElements, distCenter, CenterElts,
+            Connectivityelemedges, Connectivityedgeselem, Connectivityedgesnodes,
+            Connectivitynodesedges, Connectivitynodeselem,
+            symmetric, corresponding, symmetricElts, activeSymtrc, posQdrnt, boundary_x, boundary_y, volWeights)
+
+    end
 
 
     # -----------------------------------------------------------------------------------------------------------------------
 
-    def locate_element(self, x, y):
-        """
-        This function gives the cell containing the given coordinates. Numpy nan is returned if the cell is not in
-        the mesh.
 
-        Args:
-            x (float):  -- the x coordinate of the given point.
-            y (float):  -- the y coordinate of the given point.
+    """
+    locate_element(mesh, x, y)
 
-        Returns:
-            elt (int):  -- the element containing the given coordinates.
+    This function gives the cell containing the given coordinates. NaN is returned if the cell is not in the mesh.
 
-        """
-        log = logging.getLogger('PyFrac.locate_element')
-        if x >= self.domainLimits[3] + self.hx / 2 or y >= self.domainLimits[1] + self.hy / 2\
-                or x <= self.domainLimits[2] - self.hx / 2 or y <= self.domainLimits[0] - self.hy / 2:
-            log.warning("Point is outside domain.")
-            return np.nan
+    # Arguments
+    - `mesh::CartesianMesh`: The mesh object.
+    - `x::Float64`: The x coordinate of the given point.
+    - `y::Float64`: The y coordinate of the given point.
 
-        precision = 0.1*np.sqrt(np.finfo(float).eps)
+    # Returns
+    - `elt::Union{Int, Float64}`: The element containing the given coordinates, or NaN if outside.
+    """
+    function locate_element(mesh::CartesianMesh, x::Float64, y::Float64)::Union{Int, Float64}
 
-        return np.intersect1d(np.where(abs(self.CenterCoor[:, 0] - x) < self.hx / 2 + precision),
-                       np.where(abs(self.CenterCoor[:, 1] - y) < self.hy / 2 + precision))
+        if x >= mesh.domainLimits[4] + mesh.hx / 2 || 
+        y >= mesh.domainLimits[2] + mesh.hy / 2 ||
+        x <= mesh.domainLimits[3] - mesh.hx / 2 || 
+        y <= mesh.domainLimits[1] - mesh.hy / 2
+            
+            @warn "PyFrac.locate_element: Point is outside domain."
+            return NaN
+        end
+
+        precision = 0.1 * sqrt(eps(Float64))
+
+        cond_x = findall(abs.(mesh.CenterCoor[:, 1] .- x) .< mesh.hx / 2 + precision)
+        cond_y = findall(abs.(mesh.CenterCoor[:, 2] .- y) .< mesh.hy / 2 + precision)
+        
+        candidate_elements = intersect(cond_x, cond_y)
+
+        if length(candidate_elements) == 1
+            return candidate_elements[1]
+        else
+            return NaN
+        end
+    end
 
 #-----------------------------------------------------------------------------------------------------------------------
 
-    def Neighbors(self, elem, nx, ny):
-        """
-        Neighbouring elements of an element within the mesh. Boundary elements have themselves as neighbor.
+    """
+        Neighbors(elem, nx, ny)
 
-        Args:
-            elem (int):         -- element whose neighbor are to be found.
-            nx (int):           -- number of elements in x direction.
-            ny (int):           -- number of elements in y direction.
+    Neighbouring elements of an element within the mesh. Boundary elements have themselves as neighbor.
 
-        Returns:
-            (tuple): A tuple containing the following:
+    # Arguments
+    - `elem::Int`:         -- element whose neighbor are to be found.
+    - `nx::Int`:           -- number of elements in x direction.
+    - `ny::Int`:           -- number of elements in y direction.
 
-                | left (int)     -- left neighbour.
-                | right (int)    -- right neighbour.
-                | bottom (int)   -- bottom neighbour.
-                | top (int)      -- top neighbour.
+    # Returns
+    - `(left::Int, right::Int, bottom::Int, up::Int)`: A tuple containing the following:
 
-        """
+        | left (int)     -- left neighbour.
+        | right (int)    -- right neighbour.
+        | bottom (int)   -- bottom neighbour.
+        | top (int)      -- top neighbour.
+    """
+    function Neighbors(elem::Int, nx::Int, ny::Int)::Tuple{Int, Int, Int, Int}
 
-        j = elem // nx
-        i = elem % nx
+        j = div(elem - 1, nx) + 1
+        i = mod(elem - 1, nx) + 1
 
-        if i == 0:
-            left = elem
-        else:
-            left = j * nx + i - 1
+        left = i == 1 ? elem : elem - 1
+        right = i == nx ? elem : elem + 1
+        bottom = j == 1 ? elem : elem - nx
+        top = j == ny ? elem : elem + nx
 
-        if i == nx - 1:
-            right = elem
-        else:
-            right = j * nx + i + 1
+        return (left, right, bottom, top)
+    end
 
-        if j == 0:
-            bottom = elem
-        else:
-            bottom = (j - 1) * nx + i
-
-        if j == ny - 1:
-            up = elem
-        else:
-            up = (j + 1) * nx + i
-
-        return left, right, bottom, up
 
 # ----------------------------------------------------------------------------------------------------------------------
 
 
-    def plot(self, material_prop=None, backGround_param=None, fig=None, plot_prop=None):
-        """
-        This function plots the mesh in 2D. If the material properties is given, the cells will be color coded
-        according to the parameter given by the backGround_param argument.
+    """
+    plot(mesh; material_prop=nothing, backGround_param=nothing, fig=nothing, plot_prop=nothing)
 
-        Args:
-            material_prop (MaterialProperties):  -- a MaterialProperties class object
-            backGround_param (string):           -- the cells of the grid will be color coded according to the value
-                                                    of the parameter given by this argument. Possible options are
-                                                    'sigma0' for confining stress, 'K1c' for fracture toughness and
-                                                    'Cl' for leak off.
-            fig (Figure):                        -- A figure object to superimpose.
-            plot_prop (PlotProperties):          -- A PlotProperties object giving the properties to be utilized for
-                                                    the plot.
+    This function plots the 2D mesh. If material properties are given,
+    cells will be color-coded according to the parameter specified by backGround_param.
 
-        Returns:
-            (Figure):                            -- A Figure object to superimpose.
+    # Arguments
+    - `mesh::CartesianMesh`: mesh object containing fields domainLimits, hx, hy,
+    NumberOfElts, VertexCoor, Connectivity.
+    - `material_prop::Union{Nothing, MaterialProperties}`: (optional) material properties object.
+    - `backGround_param::Union{Nothing, String}`: (optional) name of parameter to color cells by ('sigma0', 'K1c', 'Cl', etc.).
+    - `fig`: (optional) existing figure object (Plots.Plot) to overlay.
+    - `plot_prop::Union{Nothing, NamedTuple}`: (optional) plot configuration with fields 
+    alpha, lineColor, lineWidth, colorMap, meshEdgeColor.
 
-        """
+    # Returns
+    - Updated or new figure object `fig` (Plots.Plot).
+    """
+    function plot_mesh(mesh::CartesianMesh; material_prop=nothing, backGround_param=nothing, fig=nothing, plot_prop=nothing)
+        
+        default_cm = :viridis
 
-        if fig is None:
-            fig, ax = plt.subplots()
-        else:
-            plt.figure(fig.number)
-            plt.subplot(111)
-            ax = fig.get_axes()[0]
+        # Create figure if none provided
+        if fig === nothing
+            fig = Plots.plot()
+        end
 
-        # set the four corners of the rectangular mesh
-        ax.set_xlim([self.domainLimits[2] - self.hx / 2, self.domainLimits[3] + self.hx / 2])
-        ax.set_ylim([self.domainLimits[0] - self.hy / 2, self.domainLimits[1] + self.hy / 2])
+        # Set axis limits
+        xlims = (mesh.domainLimits[3] - mesh.hx/2, mesh.domainLimits[4] + mesh.hx/2)
+        ylims = (mesh.domainLimits[1] - mesh.hy/2, mesh.domainLimits[2] + mesh.hy/2)
+        Plots.xlims!(fig, xlims...)
+        Plots.ylims!(fig, ylims...)
 
-        # add rectangle for each cell
-        patches = []
-        for i in range(self.NumberOfElts):
-            polygon = mpatches.Polygon(np.reshape(self.VertexCoor[self.Connectivity[i], :], (4, 2)), True)
-            patches.append(polygon)
+        # Set default plot properties if none provided
+        if plot_prop === nothing
+            plot_prop = (
+                alpha = 0.65,
+                lineColor = :gray,
+                lineWidth = 0.2,
+                colorMap = default_cm,
+                meshEdgeColor = :black,
+            )
+        end
 
-        if plot_prop is None:
-            plot_prop = PlotProperties()
-            plot_prop.alpha = 0.65
-            plot_prop.lineColor = '0.5'
-            plot_prop.lineWidth = 0.2
+        min_value = 0.0 
+        max_value = 1.0 
+        parameter_name = ""
+        raw_colors = fill(0.5, mesh.NumberOfElts)
+        cm = plot_prop.colorMap
 
-        p = PatchCollection(patches,
-                            cmap=plot_prop.colorMap,
-                            alpha=plot_prop.alpha,
-                            edgecolor=plot_prop.meshEdgeColor,
-                            linewidth=plot_prop.lineWidth)
+        if material_prop !== nothing && backGround_param !== nothing
+            min_value, max_value, parameter_name, raw_colors = process_material_prop_for_display(material_prop, backGround_param)
+            cm = plot_prop.colorMap
+            
+            color_range = max_value - min_value
+            if color_range == 0
+                normalized_colors = fill(0.5, length(raw_colors))
+            else
+                normalized_colors = (raw_colors .- min_value) / color_range
+            end
+        else
+            normalized_colors = fill(0.5, mesh.NumberOfElts)
 
-        # applying color according to the prescribed parameter
-        if material_prop is not None and backGround_param is not None:
-            min_value, max_value, parameter, colors = process_material_prop_for_display(material_prop,
-                                                                                        backGround_param)
-            # plotting color bar
-            sm = plt.cm.ScalarMappable(cmap=plot_prop.colorMap,
-                                       norm=plt.Normalize(vmin=min_value, vmax=max_value))
-            sm._A = []
-            clr_bar = fig.colorbar(sm, alpha=0.65)
-            clr_bar.set_label(parameter)
+        all_shapes = Shape[]
+        all_colors = RGB{Float64}[] 
+        c_palette = cgrad(cm)
 
-        else:
-            colors = np.full((self.NumberOfElts,), 0.5)
+        for i in 1:mesh.NumberOfElts
+            verts = reshape(mesh.VertexCoor[mesh.Connectivity[i], :], (4, 2))
+            xs, ys = verts[:, 1], verts[:, 2]
+            push!(all_shapes, Shape(xs, ys))
+            
+            color_idx_normalized = normalized_colors[i]
+            clamped_idx = clamp(color_idx_normalized, 0.0, 1.0) 
+            push!(all_colors, get(c_palette, clamped_idx))
+        end
 
-        p.set_array(np.array(colors))
-        ax.add_collection(p)
-        plt.axis('equal')
+        Plots.plot!(fig, all_shapes, 
+            fillcolor = all_colors, 
+            fillalpha = plot_prop.alpha, 
+            seriestype = :shape,
+            linecolor = plot_prop.meshEdgeColor, 
+            linewidth = plot_prop.lineWidth,
+            label = false,
+            aspect_ratio = :equal
+        )
+
+        # Add colorbar if coloring applied
+        if parameter_name != "" && material_prop !== nothing && backGround_param !== nothing
+            dummy_x = [xlims[1], xlims[2]]
+            dummy_y = [ylims[1], ylims[2]]
+            dummy_z = [min_value, max_value] 
+            
+            Plots.scatter!(fig, dummy_x, dummy_y, zcolor=dummy_z,
+                marker = (0.001, :white, 0),
+                linealpha = 0, markeralpha = 0,
+                color = cgrad(cm),
+                colorbar = :right,
+                colorbar_title = parameter_name,
+                label = false,
+                )
+        end
 
         return fig
+    end
+
 
 
 #-----------------------------------------------------------------------------------------------------------------------
