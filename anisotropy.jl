@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-This file is part of JFrac.
+This file is a part of JFrac.
 Realization of Pyfrac on Julia language.
 
 """

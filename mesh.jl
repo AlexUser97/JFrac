@@ -15,7 +15,8 @@ using .Visualization: zoom_factory, to_precision, text3d
 using .Symmetry: *
 
 using Logging
-using Plots
+using PyPlot
+using Statistics
 """
     CartesianMesh
     A uniform Cartesian mesh centered at (0,0) with domain [-Lx, Lx] × [-Ly, Ly].
@@ -108,12 +109,12 @@ mutable struct CartesianMesh
         domainLimits = [ylims[1], ylims[2], xlims[1], xlims[2]]
 
         if nx % 2 == 0
-            @warn "Number of elements in x-direction are even. Using $(nx+1) elements to have origin at a cell center..."
+            @warn "Number of elements in x-direction are even. Using $(nx+1) elements to have origin at a cell center..." _group="PyFrac.mesh"
             nx += 1
         end
 
         if ny % 2 == 0
-            @warn "Number of elements in y-direction are even. Using $(ny+1) elements to have origin at a cell center..."
+            @warn "Number of elements in y-direction are even. Using $(ny+1) elements to have origin at a cell center..." _group="PyFrac.mesh"
             ny += 1
         end
 
@@ -212,9 +213,9 @@ mutable struct CartesianMesh
         booleconnEdgesNodes = zeros(Int, numberofedges, 1)           
         connEdgesNodes = Matrix{Int}(undef, numberofedges, 2)         
         connElemEdges = Matrix{Int}(undef, NumberOfElts, 4)           
-        connEdgesElem = fill(typemax(Int), numberofedges, 2)          
-        connNodesEdges = fill(typemax(Int), NumberofNodes, 4)         
-        connNodesElem = fill(typemax(Int), NumberofNodes, 4)
+        connEdgesElem = fill(-1, numberofedges, 2)          
+        connNodesEdges = fill(-1, NumberofNodes, 4)         
+        connNodesElem = fill(-1, NumberofNodes, 4)
         
         k = 1
         for j in 1:ny
@@ -524,7 +525,7 @@ mutable struct CartesianMesh
         for e in 1:NumberOfElts
             vertex_indices = conn[e, :]
             vertices = VertexCoor[vertex_indices, :]
-            CoorMid[e, :] = vec(mean(vertices, dims=1))
+            CoorMid[e, :] = mean(vertices, dims=1)
         end
         CenterCoor = CoorMid
         distCenter = sqrt.((CoorMid[:, 1] .- centerMesh[1]) .^ 2 .+ (CoorMid[:, 2] .- centerMesh[2]) .^ 2)
@@ -536,7 +537,7 @@ mutable struct CartesianMesh
 
         if length(CenterElts) != 1
             CenterElts = Int(NumberOfElts / 2)
-            @debug "Mesh with no center element. To be looked into"
+            @debug "Mesh with no center element. To be looked into" _group="PyFrac.mesh"
             # throw(ErrorException("Mesh with no center element. To be looked into"))
         end
         if symmetric
@@ -589,7 +590,7 @@ mutable struct CartesianMesh
         x <= mesh.domainLimits[3] - mesh.hx / 2 || 
         y <= mesh.domainLimits[1] - mesh.hy / 2
             
-            @warn "PyFrac.locate_element: Point is outside domain."
+            @warn "PyFrac.locate_element: Point is outside domain." _group="PyFrac.mesh"
             return NaN
         end
 
@@ -642,453 +643,439 @@ mutable struct CartesianMesh
 
 
 # ----------------------------------------------------------------------------------------------------------------------
-
-
     """
-    plot(mesh; material_prop=nothing, backGround_param=nothing, fig=nothing, plot_prop=nothing)
+        plot(self, material_prop=nothing, backGround_param=nothing, fig=nothing, plot_prop=nothing)
 
-    This function plots the 2D mesh. If material properties are given,
-    cells will be color-coded according to the parameter specified by backGround_param.
+    This function plots the mesh in 2D. If the material properties is given, the cells will be color coded
+    according to the parameter given by the backGround_param argument.
 
     # Arguments
-    - `mesh::CartesianMesh`: mesh object containing fields domainLimits, hx, hy,
-    NumberOfElts, VertexCoor, Connectivity.
-    - `material_prop::Union{Nothing, MaterialProperties}`: (optional) material properties object.
-    - `backGround_param::Union{Nothing, String}`: (optional) name of parameter to color cells by ('sigma0', 'K1c', 'Cl', etc.).
-    - `fig`: (optional) existing figure object (Plots.Plot) to overlay.
-    - `plot_prop::Union{Nothing, NamedTuple}`: (optional) plot configuration with fields 
-    alpha, lineColor, lineWidth, colorMap, meshEdgeColor.
+    - `material_prop`:           -- a MaterialProperties class object
+    - `backGround_param`:        -- the cells of the grid will be color coded according to the value
+                                of the parameter given by this argument. Possible options are
+                                'sigma0' for confining stress, 'K1c' for fracture toughness and
+                                'Cl' for leak off.
+    - `fig`:                     -- A figure object to superimpose.
+    - `plot_prop`:               -- A PlotProperties object giving the properties to be utilized for
+                                the plot.
 
     # Returns
-    - Updated or new figure object `fig` (Plots.Plot).
+    - `(Figure)`:                -- A Figure object to superimpose.
     """
-    function plot_mesh(mesh::CartesianMesh; material_prop=nothing, backGround_param=nothing, fig=nothing, plot_prop=nothing)
-        
-        default_cm = :viridis
-
-        # Create figure if none provided
+    function plot(self, material_prop=nothing, backGround_param=nothing, fig=nothing, plot_prop=nothing)
         if fig === nothing
-            fig = Plots.plot()
-        end
-
-        # Set axis limits
-        xlims = (mesh.domainLimits[3] - mesh.hx/2, mesh.domainLimits[4] + mesh.hx/2)
-        ylims = (mesh.domainLimits[1] - mesh.hy/2, mesh.domainLimits[2] + mesh.hy/2)
-        Plots.xlims!(fig, xlims...)
-        Plots.ylims!(fig, ylims...)
-
-        # Set default plot properties if none provided
-        if plot_prop === nothing
-            plot_prop = (
-                alpha = 0.65,
-                lineColor = :gray,
-                lineWidth = 0.2,
-                colorMap = default_cm,
-                meshEdgeColor = :black,
-            )
-        end
-
-        min_value = 0.0 
-        max_value = 1.0 
-        parameter_name = ""
-        raw_colors = fill(0.5, mesh.NumberOfElts)
-        cm = plot_prop.colorMap
-
-        if material_prop !== nothing && backGround_param !== nothing
-            min_value, max_value, parameter_name, raw_colors = process_material_prop_for_display(material_prop, backGround_param)
-            cm = plot_prop.colorMap
-            
-            color_range = max_value - min_value
-            if color_range == 0
-                normalized_colors = fill(0.5, length(raw_colors))
-            else
-                normalized_colors = (raw_colors .- min_value) / color_range
-            end
+            fig, ax = subplots()
         else
-            normalized_colors = fill(0.5, mesh.NumberOfElts)
-
-        all_shapes = Shape[]
-        all_colors = RGB{Float64}[] 
-        c_palette = cgrad(cm)
-
-        for i in 1:mesh.NumberOfElts
-            verts = reshape(mesh.VertexCoor[mesh.Connectivity[i], :], (4, 2))
-            xs, ys = verts[:, 1], verts[:, 2]
-            push!(all_shapes, Shape(xs, ys))
-            
-            color_idx_normalized = normalized_colors[i]
-            clamped_idx = clamp(color_idx_normalized, 0.0, 1.0) 
-            push!(all_colors, get(c_palette, clamped_idx))
+            figure(fig.number)
+            subplot(111)
+            ax = fig.get_axes()[1]
         end
 
-        Plots.plot!(fig, all_shapes, 
-            fillcolor = all_colors, 
-            fillalpha = plot_prop.alpha, 
-            seriestype = :shape,
-            linecolor = plot_prop.meshEdgeColor, 
-            linewidth = plot_prop.lineWidth,
-            label = false,
-            aspect_ratio = :equal
-        )
+        # set the four corners of the rectangular mesh
+        ax.set_xlim([self.domainLimits[3] - self.hx / 2, self.domainLimits[4] + self.hx / 2])
+        ax.set_ylim([self.domainLimits[1] - self.hy / 2, self.domainLimits[2] + self.hy / 2])
 
-        # Add colorbar if coloring applied
-        if parameter_name != "" && material_prop !== nothing && backGround_param !== nothing
-            dummy_x = [xlims[1], xlims[2]]
-            dummy_y = [ylims[1], ylims[2]]
-            dummy_z = [min_value, max_value] 
-            
-            Plots.scatter!(fig, dummy_x, dummy_y, zcolor=dummy_z,
-                marker = (0.001, :white, 0),
-                linealpha = 0, markeralpha = 0,
-                color = cgrad(cm),
-                colorbar = :right,
-                colorbar_title = parameter_name,
-                label = false,
-                )
+        # add rectangle for each cell
+        patches = []
+        for i in 1:self.NumberOfElts
+            polygon = Polygon(reshape(self.VertexCoor[self.Connectivity[i], :], (4, 2)), true)
+            push!(patches, polygon)
         end
+
+        if plot_prop === nothing
+            plot_prop = PlotProperties()
+            plot_prop.alpha = 0.65
+            plot_prop.lineColor = "0.5"
+            plot_prop.lineWidth = 0.2
+        end
+
+        p = PatchCollection(patches,
+                            cmap=plot_prop.colorMap,
+                            alpha=plot_prop.alpha,
+                            edgecolor=plot_prop.meshEdgeColor,
+                            linewidth=plot_prop.lineWidth)
+
+        # applying color according to the prescribed parameter
+        if material_prop !== nothing && backGround_param !== nothing
+            min_value, max_value, parameter, colors = process_material_prop_for_display(material_prop,
+                                                                                    backGround_param)
+            # plotting color bar
+            sm = cm.ScalarMappable(cmap=plot_prop.colorMap,
+                                norm=plt.Normalize(vmin=min_value, vmax=max_value))
+            sm._A = []
+            clr_bar = fig.colorbar(sm, alpha=0.65)
+            clr_bar.set_label(parameter)
+        else
+            colors = fill(0.5, self.NumberOfElts)
+        end
+
+        p.set_array(Array(colors))
+        ax.add_collection(p)
+        axis("equal")
 
         return fig
     end
 
+    #-----------------------------------------------------------------------------------------------------------------------
 
+    """
+        plot_3D(self, material_prop=nothing, backGround_param=nothing, fig=nothing, plot_prop=nothing)
 
-#-----------------------------------------------------------------------------------------------------------------------
+    This function plots the mesh in 3D. If the material properties is given, the cells will be color coded
+    according to the parameter given by the backGround_param argument.
 
-    def plot_3D(self, material_prop=None, backGround_param=None, fig=None, plot_prop=None):
-        """
-        This function plots the mesh in 3D. If the material properties is given, the cells will be color coded
-        according to the parameter given by the backGround_param argument.
+    # Arguments
+    - `material_prop`:           -- a MaterialProperties class object
+    - `backGround_param`:        -- the cells of the grid will be color coded according to the value
+                                of the parameter given by this argument. Possible options are
+                                'sigma0' for confining stress, 'K1c' for fracture toughness and
+                                'Cl' for leak off.
+    - `fig`:                     -- A figure object to superimpose.
+    - `plot_prop`:               -- A PlotProperties object giving the properties to be utilized for
+                                the plot.
 
-        Args:
-            material_prop (MaterialProperties):  -- a MaterialProperties class object
-            backGround_param (string):           -- the cells of the grid will be color coded according to the value
-                                                    of the parameter given by this argument. Possible options are
-                                                    'sigma0' for confining stress, 'K1c' for fracture toughness and
-                                                    'Cl' for leak off.
-            fig (Figure):                        -- A figure object to superimpose.
-            plot_prop (PlotProperties):          -- A PlotProperties object giving the properties to be utilized for
-                                                    the plot.
+    # Returns
+    - `(Figure)`:                -- A Figure object to superimpose.
+    """
+    function plot_3D(self, material_prop=nothing, backGround_param=nothing, fig=nothing, plot_prop=nothing)
+        if backGround_param !== nothing && material_prop === nothing
+            throw(ArgumentError("Material properties are required to plot the background parameter."))
+        end
+        if material_prop !== nothing && backGround_param === nothing
+            @warn "back ground parameter not provided. Plotting confining stress..." _group="PyFrac.mesh"
+            backGround_param = "sigma0"
+        end
 
-        Returns:
-            (Figure):                            -- A Figure object to superimpose.
-
-        """
-        log = logging.getLogger('PyFrac.plot3D')
-        if backGround_param is not None and material_prop is None:
-            raise ValueError("Material properties are required to plot the background parameter.")
-        if material_prop is not None and backGround_param is None:
-            log.warning("back ground parameter not provided. Plotting confining stress...")
-            backGround_param = 'sigma0'
-
-        if fig is None:
+        if fig === nothing
             fig = plt.figure()
-            ax = fig.add_subplot(1, 1, 1, projection='3d')
-            ax.set_xlim([self.domainLimits[2] * 1.2, self.domainLimits[3] * 1.2])
-            ax.set_ylim([self.domainLimits[0] * 1.2, self.domainLimits[1] * 1.2])
+            ax = fig.add_subplot(1, 1, 1, projection="3d")
+            ax.set_xlim([self.domainLimits[3] * 1.2, self.domainLimits[4] * 1.2])
+            ax.set_ylim([self.domainLimits[1] * 1.2, self.domainLimits[2] * 1.2])
             scale = 1.1
             zoom_factory(ax, base_scale=scale)
-        else:
-            ax = fig.get_axes()[0]
+        else
+            ax = fig.get_axes()[1]
+        end
 
-        if plot_prop is None:
+        if plot_prop === nothing
             plot_prop = PlotProperties()
-        if plot_prop.textSize is None:
+        end
+        if plot_prop.textSize === nothing
             plot_prop.textSize = max(self.Lx / 15, self.Ly / 15)
+        end
 
-        log.info("Plotting mesh in 3D...")
-        if material_prop is not None and backGround_param is not None:
+        @info "Plotting mesh in 3D..." _group="PyFrac.mesh"
+        if material_prop !== nothing && backGround_param !== nothing
             min_value, max_value, parameter, colors = process_material_prop_for_display(material_prop,
-                                                                                        backGround_param)
+                                                                                    backGround_param)
+        end
 
         # add rectangle for each cell
-        for i in range(self.NumberOfElts):
+        for i in 1:self.NumberOfElts
             rgb_col = to_rgb(plot_prop.meshColor)
-            if backGround_param is not None:
-                face_color = (rgb_col[0] * colors[i], rgb_col[1] * colors[i], rgb_col[2] * colors[i], 0.5)
-            else:
-                face_color = (rgb_col[0], rgb_col[1], rgb_col[2], 0.5)
+            if backGround_param !== nothing
+                face_color = (rgb_col[1] * colors[i], rgb_col[2] * colors[i], rgb_col[3] * colors[i], 0.5)
+            else
+                face_color = (rgb_col[1], rgb_col[2], rgb_col[3], 0.5)
+            end
 
             rgb_col = to_rgb(plot_prop.meshEdgeColor)
-            edge_color = (rgb_col[0], rgb_col[1], rgb_col[2], 0.2)
-            cell = mpatches.Rectangle((self.CenterCoor[i, 0] - self.hx / 2,
-                                       self.CenterCoor[i, 1] - self.hy / 2),
-                                       self.hx,
-                                       self.hy,
-                                       ec=edge_color,
-                                       fc=face_color)
+            edge_color = (rgb_col[1], rgb_col[2], rgb_col[3], 0.2)
+            cell = Rectangle((self.CenterCoor[i, 1] - self.hx / 2,
+                            self.CenterCoor[i, 2] - self.hy / 2),
+                            self.hx,
+                            self.hy,
+                            ec=edge_color,
+                            fc=face_color)
             ax.add_patch(cell)
             art3d.pathpatch_2d_to_3d(cell)
+        end
 
-        if backGround_param is not None and material_prop is not None:
+        if backGround_param !== nothing && material_prop !== nothing
             make_3D_colorbar(self, material_prop, backGround_param, ax, plot_prop)
+        end
 
-        self.plot_scale_3d(ax, plot_prop)
+        plot_scale_3d(self, ax, plot_prop)
 
-        ax.grid(False)
-        ax.set_frame_on(False)
+        ax.grid(false)
+        ax.set_frame_on(false)
         ax.set_axis_off()
         set_aspect_equal_3d(ax)
         return fig
+    end
 
+    #-----------------------------------------------------------------------------------------------------------------------
 
-#-----------------------------------------------------------------------------------------------------------------------
+    """
+        plot_scale_3d(self, ax, plot_prop)
 
-    def plot_scale_3d(self, ax, plot_prop):
-        """
-        This function plots the scale of the fracture by adding lines giving the length dimensions of the fracture.
-
-        """
-        log = logging.getLogger('PyFrac.plot_scale_3d')
-        log.info("\tPlotting scale...")
+    This function plots the scale of the fracture by adding lines giving the length dimensions of the fracture.
+    """
+    function plot_scale_3d(self, ax, plot_prop)
+        @info "\tPlotting scale..." _group="PyFrac.mesh"
 
         Path = mpath.Path
 
         rgb_col = to_rgb(plot_prop.meshLabelColor)
-        edge_color = (rgb_col[0], rgb_col[1], rgb_col[2], 1.)
+        edge_color = (rgb_col[1], rgb_col[2], rgb_col[3], 1.0)
 
         codes = []
         verts = []
-        verts_x = np.linspace(self.domainLimits[2], self.domainLimits[3], 7)
-        verts_y = np.linspace(self.domainLimits[0], self.domainLimits[1], 7)
+        verts_x = range(self.domainLimits[3], self.domainLimits[4], length=7)
+        verts_y = range(self.domainLimits[1], self.domainLimits[2], length=7)
         tick_len = max(self.hx / 2, self.hy / 2)
-        for i in range(7):
-            codes.append(Path.MOVETO)
-            elem = self.locate_element(verts_x[i], self.domainLimits[0])
-            verts.append((self.CenterCoor[elem, 0], self.domainLimits[0] - self.hy / 2))
-            codes.append(Path.LINETO)
-            verts.append((self.CenterCoor[elem, 0], self.domainLimits[0] + tick_len))
-            x_val = to_precision(np.round(self.CenterCoor[elem, 0], 5), plot_prop.dispPrecision)
+        for i in 1:7
+            push!(codes, Path.MOVETO)
+            elem = locate_element(self, verts_x[i], self.domainLimits[1])
+            push!(verts, (self.CenterCoor[elem, 1], self.domainLimits[1] - self.hy / 2))
+            push!(codes, Path.LINETO)
+            push!(verts, (self.CenterCoor[elem, 1], self.domainLimits[1] + tick_len))
+            x_val = to_precision(round(self.CenterCoor[elem, 1], digits=5), plot_prop.dispPrecision)
             text3d(ax,
-                   (self.CenterCoor[elem, 0] - plot_prop.dispPrecision * plot_prop.textSize / 3,
-                    self.domainLimits[0] - self.hy / 2 - plot_prop.textSize,
+                (self.CenterCoor[elem, 1] - plot_prop.dispPrecision * plot_prop.textSize / 3,
+                    self.domainLimits[1] - self.hy / 2 - plot_prop.textSize,
                     0),
-                   x_val,
-                   zdir="z",
-                   size=plot_prop.textSize,
-                   usetex=plot_prop.useTex,
-                   ec="none",
-                   fc=edge_color)
+                x_val,
+                zdir="z",
+                size=plot_prop.textSize,
+                usetex=plot_prop.useTex,
+                ec="none",
+                fc=edge_color)
 
-            codes.append(Path.MOVETO)
-            elem = self.locate_element(self.domainLimits[2], verts_y[i])
-            verts.append((self.domainLimits[2] - self.hx / 2, self.CenterCoor[elem, 1][0]))
-            codes.append(Path.LINETO)
-            verts.append((self.domainLimits[2] + tick_len, self.CenterCoor[elem, 1][0]))
-            y_val = to_precision(np.round(self.CenterCoor[elem, 1], 5), plot_prop.dispPrecision)
+            push!(codes, Path.MOVETO)
+            elem = locate_element(self, self.domainLimits[3], verts_y[i])
+            push!(verts, (self.domainLimits[3] - self.hx / 2, self.CenterCoor[elem, 2]))
+            push!(codes, Path.LINETO)
+            push!(verts, (self.domainLimits[3] + tick_len, self.CenterCoor[elem, 2]))
+            y_val = to_precision(round(self.CenterCoor[elem, 2], digits=5), plot_prop.dispPrecision)
             text3d(ax,
-                   (self.domainLimits[2] - self.hx / 2 - plot_prop.dispPrecision * plot_prop.textSize,
-                    self.CenterCoor[elem, 1] - plot_prop.textSize / 2,
+                (self.domainLimits[3] - self.hx / 2 - plot_prop.dispPrecision * plot_prop.textSize,
+                    self.CenterCoor[elem, 2] - plot_prop.textSize / 2,
                     0),
-                   y_val,
-                   zdir="z",
-                   size=plot_prop.textSize,
-                   usetex=plot_prop.useTex,
-                   ec="none",
-                   fc=edge_color)
+                y_val,
+                zdir="z",
+                size=plot_prop.textSize,
+                usetex=plot_prop.useTex,
+                ec="none",
+                fc=edge_color)
+        end
 
-        log.info("\tAdding labels...")
+        @info "\tAdding labels..." _group="PyFrac.mesh"
         text3d(ax,
-               (0.,
-                -self.domainLimits[2] - plot_prop.textSize * 3,
+            (0.0,
+                -self.domainLimits[3] - plot_prop.textSize * 3,
                 0),
-               'meters',
-               zdir="z",
-               size=plot_prop.textSize,
-               usetex=plot_prop.useTex,
-               ec="none",
-               fc=edge_color)
+            "meters",
+            zdir="z",
+            size=plot_prop.textSize,
+            usetex=plot_prop.useTex,
+            ec="none",
+            fc=edge_color)
 
         path = mpath.Path(verts, codes)
         patch = mpatches.PathPatch(path,
-                                   lw=plot_prop.lineWidth,
-                                   facecolor='none',
-                                   edgecolor=edge_color)
+                                lw=plot_prop.lineWidth,
+                                facecolor="none",
+                                edgecolor=edge_color)
         ax.add_patch(patch)
         art3d.pathpatch_2d_to_3d(patch)
+    end
 
-#-----------------------------------------------------------------------------------------------------------------------
+    #-----------------------------------------------------------------------------------------------------------------------
 
+    """
+        identify_elements(self, elements, fig=nothing, plot_prop=nothing, plot_mesh=true, print_number=true)
 
-    def identify_elements(self, elements, fig=None, plot_prop=None, plot_mesh=True, print_number=True):
-        """
-        This functions identify the given set of elements by highlighting them on the grid. the function plots
-        the grid and the given set of elements.
+    This functions identify the given set of elements by highlighting them on the grid. the function plots
+    the grid and the given set of elements.
 
-        Args:
-            elements (ndarray):             -- the given set of elements to be highlighted.
-            fig (Figure):                   -- A figure object to superimpose.
-            plot_prop (PlotProperties):     -- A PlotProperties object giving the properties to be utilized for
-                                               the plot.
-            plot_mesh (bool):               -- if False, grid will not be plotted and only the edges of the given
-                                               elements will be plotted.
-            print_number (bool):            -- if True, numbers of the cell will also be printed along with outline.
+    # Arguments
+    - `elements`:                -- the given set of elements to be highlighted.
+    - `fig`:                     -- A figure object to superimpose.
+    - `plot_prop`:               -- A PlotProperties object giving the properties to be utilized for
+                                the plot.
+    - `plot_mesh`:               -- if False, grid will not be plotted and only the edges of the given
+                                elements will be plotted.
+    - `print_number`:            -- if True, numbers of the cell will also be printed along with outline.
 
-        Returns:
-            (Figure):                       -- A Figure object that can be used superimpose further plots.
-
-        """
-
-        if plot_prop is None:
+    # Returns
+    - `(Figure)`:                -- A Figure object that can be used superimpose further plots.
+    """
+    function identify_elements(self, elements, fig=nothing, plot_prop=nothing, plot_mesh=true, print_number=true)
+        if plot_prop === nothing
             plot_prop = PlotProperties()
+        end
 
-        if plot_mesh:
-            fig = self.plot(fig=fig)
+        if plot_mesh
+            fig = plot(self, fig=fig)
+        end
 
-        if fig is None:
-            fig, ax = plt.subplots()
-        else:
-            ax = fig.get_axes()[0]
+        if fig === nothing
+            fig, ax = subplots()
+        else
+            ax = fig.get_axes()[1]
+        end
 
         # set the four corners of the rectangular mesh
-        ax.set_xlim([self.domainLimits[2] - self.hx / 2, self.domainLimits[3] + self.hx / 2])
-        ax.set_ylim([self.domainLimits[0] - self.hy / 2, self.domainLimits[1] + self.hy / 2])
+        ax.set_xlim([self.domainLimits[3] - self.hx / 2, self.domainLimits[4] + self.hx / 2])
+        ax.set_ylim([self.domainLimits[1] - self.hy / 2, self.domainLimits[2] + self.hy / 2])
 
         # add rectangle for each cell
         patch_list = []
-        for i in elements:
-            polygon = mpatches.Polygon(np.reshape(self.VertexCoor[self.Connectivity[i], :], (4, 2)), True)
-            patch_list.append(polygon)
+        for i in elements
+            polygon = Polygon(reshape(self.VertexCoor[self.Connectivity[i], :], (4, 2)), true)
+            push!(patch_list, polygon)
+        end
 
         p = PatchCollection(patch_list,
                             cmap=plot_prop.colorMap,
                             edgecolor=plot_prop.lineColor,
                             linewidth=plot_prop.lineWidth,
-                            facecolors='none')
+                            facecolors="none")
         ax.add_collection(p)
 
-        if print_number:
+        if print_number
             # print Element numbers on the plot for elements to be identified
-            for i in range(len(elements)):
-                ax.text(self.CenterCoor[elements[i], 0] - self.hx / 4, self.CenterCoor[elements[i], 1] -
-                        self.hy / 4, repr(elements[i]), fontsize=plot_prop.textSize)
+            for i in 1:length(elements)
+                ax.text(self.CenterCoor[elements[i], 1] - self.hx / 4, self.CenterCoor[elements[i], 2] -
+                        self.hy / 4, string(elements[i]), fontsize=plot_prop.textSize)
+            end
+        end
 
         return fig
+    end
 
-#-----------------------------------------------------------------------------------------------------------------------
+    #-----------------------------------------------------------------------------------------------------------------------
 
-
-def make_3D_colorbar(mesh, material_prop, backGround_param, ax, plot_prop):
     """
+        make_3D_colorbar(mesh, material_prop, backGround_param, ax, plot_prop)
+
     This function makes the color bar on 3D mesh plot using rectangular patches with color gradient from gray to the
     color given by the plot properties. The minimum and maximum values are taken from the given parameter in the
     material properties.
-
     """
-    log = logging.getLogger('PyFrac.make_3D_colorbar')
-    log.info("\tMaking colorbar...")
+    function make_3D_colorbar(mesh, material_prop, backGround_param, ax, plot_prop)
+        @info "\tMaking colorbar..." _group="PyFrac.mesh"
 
-    min_value, max_value, parameter, colors = process_material_prop_for_display(material_prop,
+        min_value, max_value, parameter, colors = process_material_prop_for_display(material_prop,
                                                                                 backGround_param)
-    rgb_col_mesh = to_rgb(plot_prop.meshEdgeColor)
-    edge_color = (rgb_col_mesh[0],
-                  rgb_col_mesh[1],
-                  rgb_col_mesh[2],
-                  0.2)
+        rgb_col_mesh = to_rgb(plot_prop.meshEdgeColor)
+        edge_color = (rgb_col_mesh[1],
+                    rgb_col_mesh[2],
+                    rgb_col_mesh[3],
+                    0.2)
 
-    color_range = np.linspace(0, 1., 11)
-    y = np.linspace(-mesh.Ly, mesh.Ly, 11)
-    dy = y[1] - y[0]
-    for i in range(11):
-        rgb_col = to_rgb(plot_prop.meshColor)
-        face_color = (rgb_col[0] * color_range[i],
-                      rgb_col[1] * color_range[i],
-                      rgb_col[2] * color_range[i],
-                      0.5)
-        cell = mpatches.Rectangle((mesh.Lx + 4 * mesh.hx,
-                                   y[i]),
-                                  2 * dy,
-                                  dy,
-                                  ec=edge_color,
-                                  fc=face_color)
-        ax.add_patch(cell)
-        art3d.pathpatch_2d_to_3d(cell)
+        color_range = range(0, 1.0, length=11)
+        y = range(-mesh.Ly, mesh.Ly, length=11)
+        dy = y[2] - y[1]
+        for i in 1:11
+            rgb_col = to_rgb(plot_prop.meshColor)
+            face_color = (rgb_col[1] * color_range[i],
+                        rgb_col[2] * color_range[i],
+                        rgb_col[3] * color_range[i],
+                        0.5)
+            cell = Rectangle((mesh.Lx + 4 * mesh.hx,
+                            y[i]),
+                            2 * dy,
+                            dy,
+                            ec=edge_color,
+                            fc=face_color)
+            ax.add_patch(cell)
+            art3d.pathpatch_2d_to_3d(cell)
+        end
 
-    rgb_col_txt = to_rgb(plot_prop.meshLabelColor)
-    txt_color = (rgb_col_txt[0],
-                 rgb_col_txt[1],
-                 rgb_col_txt[2],
-                 1.0)
-    text3d(ax,
-           (mesh.Lx + 4 * mesh.hx, y[9] + 3 * dy, 0),
-           parameter,
-           zdir="z",
-           size=plot_prop.textSize,
-           usetex=plot_prop.useTex,
-           ec="none",
-           fc=txt_color)
-    y = [y[0], y[5], y[10]]
-    values = np.linspace(min_value, max_value, 11)
-    values = [values[0], values[5], values[10]]
-    for i in range(3):
-        disp_val = to_precision(values[i], plot_prop.dispPrecision)
+        rgb_col_txt = to_rgb(plot_prop.meshLabelColor)
+        txt_color = (rgb_col_txt[1],
+                    rgb_col_txt[2],
+                    rgb_col_txt[3],
+                    1.0)
         text3d(ax,
-               (mesh.Lx + 4 * mesh.hx + 2 * dy, y[i] + dy / 2, 0),
-               disp_val,
-               zdir="z",
-               size=plot_prop.textSize,
-               usetex=plot_prop.useTex,
-               ec="none",
-               fc=txt_color)
+            (mesh.Lx + 4 * mesh.hx, y[10] + 3 * dy, 0),
+            parameter,
+            zdir="z",
+            size=plot_prop.textSize,
+            usetex=plot_prop.useTex,
+            ec="none",
+            fc=txt_color)
+        y_selected = [y[1], y[6], y[11]]
+        values = range(min_value, max_value, length=11)
+        values_selected = [values[1], values[6], values[11]]
+        for i in 1:3
+            disp_val = to_precision(values_selected[i], plot_prop.dispPrecision)
+            text3d(ax,
+                (mesh.Lx + 4 * mesh.hx + 2 * dy, y_selected[i] + dy / 2, 0),
+                disp_val,
+                zdir="z",
+                size=plot_prop.textSize,
+                usetex=plot_prop.useTex,
+                ec="none",
+                fc=txt_color)
+        end
+    end
 
-#-----------------------------------------------------------------------------------------------------------------------
+    #-----------------------------------------------------------------------------------------------------------------------
 
-
-def process_material_prop_for_display(material_prop, backGround_param):
     """
+        process_material_prop_for_display(material_prop, backGround_param)
+
     This function generates the appropriate variables to display the color coded mesh background.
+    """
+    function process_material_prop_for_display(material_prop, backGround_param)
+        colors = fill(0.5, length(material_prop.SigmaO))
+
+        if backGround_param in ["confining stress", "sigma0"]
+            max_value = maximum(material_prop.SigmaO) / 1e6
+            min_value = minimum(material_prop.SigmaO) / 1e6
+            if max_value - min_value > 0
+                colors = (material_prop.SigmaO / 1e6 - min_value) / (max_value - min_value)
+            end
+            parameter = "confining stress (\$MPa\$)"
+        elseif backGround_param in ["fracture toughness", "K1c"]
+            max_value = maximum(material_prop.K1c) / 1e6
+            min_value = minimum(material_prop.K1c) / 1e6
+            if max_value - min_value > 0
+                colors = (material_prop.K1c / 1e6 - min_value) / (max_value - min_value)
+            end
+            parameter = "fracture toughness (\$Mpa\\sqrt{m}\$)"
+        elseif backGround_param in ["leak off coefficient", "Cl"]
+            max_value = maximum(material_prop.Cl)
+            min_value = minimum(material_prop.Cl)
+            if max_value - min_value > 0
+                colors = (material_prop.Cl - min_value) / (max_value - min_value)
+            end
+            parameter = "Leak off coefficient"
+        elseif backGround_param !== nothing
+            throw(ArgumentError("Back ground color identifier not supported!\n" *
+                                "Select one of the following:\n" *
+                                "-- 'confining stress' or 'sigma0'\n" *
+                                "-- 'fracture toughness' or 'K1c'\n" *
+                                "-- 'leak off coefficient' or 'Cl'"))
+        end
+
+        return min_value, max_value, parameter, colors
+    end
+
+    #-----------------------------------------------------------------------------------------------------------------------
 
     """
+        set_aspect_equal_3d(ax)
 
-    colors = np.full((len(material_prop.SigmaO),), 0.5)
+    Fix equal aspect bug for 3D plots.
+    """
+    function set_aspect_equal_3d(ax)
+        xlim = ax.get_xlim3d()
+        ylim = ax.get_ylim3d()
+        zlim = ax.get_zlim3d()
 
-    if backGround_param in ['confining stress', 'sigma0']:
-        max_value = max(material_prop.SigmaO) / 1e6
-        min_value = min(material_prop.SigmaO) / 1e6
-        if max_value - min_value > 0:
-            colors = (material_prop.SigmaO / 1e6 - min_value) / (max_value - min_value)
-        parameter = "confining stress ($MPa$)"
-    elif backGround_param in ['fracture toughness', 'K1c']:
-        max_value = max(material_prop.K1c) / 1e6
-        min_value = min(material_prop.K1c) / 1e6
-        if max_value - min_value > 0:
-            colors = (material_prop.K1c / 1e6 - min_value) / (max_value - min_value)
-        parameter = "fracture toughness ($Mpa\sqrt{m}$)"
-    elif backGround_param in ['leak off coefficient', 'Cl']:
-        max_value = max(material_prop.Cl)
-        min_value = min(material_prop.Cl)
-        if max_value - min_value > 0:
-            colors = (material_prop.Cl - min_value) / (max_value - min_value)
-        parameter = "Leak off coefficient"
-    elif backGround_param is not None:
-        raise ValueError("Back ground color identifier not supported!\n"
-                         "Select one of the following:\n"
-                         "-- \'confining stress\' or \'sigma0\'\n"
-                         "-- \'fracture toughness\' or \'K1c\'\n"
-                         "-- \'leak off coefficient\' or \'Cl\'")
+        xmean = mean(xlim)
+        ymean = mean(ylim)
+        zmean = mean(zlim)
 
-    return min_value, max_value, parameter, colors
+        plot_radius = maximum([abs(lim - mean_)
+                            for (lims, mean_) in zip((xlim, ylim, zlim), (xmean, ymean, zmean))
+                            for lim in lims])
 
-
-#-----------------------------------------------------------------------------------------------------------------------
-
-def set_aspect_equal_3d(ax):
-    """Fix equal aspect bug for 3D plots."""
-
-    xlim = ax.get_xlim3d()
-    ylim = ax.get_ylim3d()
-    zlim = ax.get_zlim3d()
-
-    from numpy import mean
-    xmean = mean(xlim)
-    ymean = mean(ylim)
-    zmean = mean(zlim)
-
-    plot_radius = max([abs(lim - mean_)
-                       for lims, mean_ in ((xlim, xmean),
-                                           (ylim, ymean),
-                                           (zlim, zmean))
-                       for lim in lims])
-
-    ax.set_xlim3d([xmean - plot_radius, xmean + plot_radius])
-    ax.set_ylim3d([ymean - plot_radius, ymean + plot_radius])
-    ax.set_zlim3d([zmean - plot_radius, zmean + plot_radius])
+        ax.set_xlim3d([xmean - plot_radius, xmean + plot_radius])
+        ax.set_ylim3d([ymean - plot_radius, ymean + plot_radius])
+        ax.set_zlim3d([zmean - plot_radius, zmean + plot_radius])
+    end

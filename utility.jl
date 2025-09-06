@@ -11,143 +11,217 @@ import numpy as np
 import matplotlib.pyplot as plt
 import dill
 import copy
-from tip_inversion import TipAsymInversion
 
 
-def plot_as_matrix(data, mesh, fig=None):
+module Utility
 
-    if fig is None:
-        fig = plt.figure()
-    ax = fig.add_subplot(111)
+include("tip_inversion.jl")
+include("mesh.jl")
+using .Utility: TipAsymInversion
+using .Mesh: CartesianMesh
+using JLD2
+using Logging
+using LoggingExtras
+using PyPlot
+using FilePathsBase: joinpath
+using Base.Filesystem: readdir, endswith
 
-    ReMesh = np.resize(data, (mesh.ny, mesh.nx))
-    cax = ax.matshow(ReMesh)
-    fig.colorbar(cax)
-    plt.show()
+export logging_level, setup_logging_to_console
 
+
+"""
+    plot_as_matrix(data, mesh, fig=nothing)
+
+Plot data as a matrix using the given mesh.
+
+# Arguments
+- `data::Vector{Float64}`: The data to be plotted.
+- `mesh::CartesianMesh`: The mesh object.
+- `fig::Union{PyObject, Nothing}`: The figure object (optional).
+
+# Returns
+- `PyObject`: The figure object.
+"""
+function plot_as_matrix(data::Vector{Float64}, mesh::CartesianMesh, fig::Union{PyObject, Nothing}=nothing)
+    if fig === nothing
+        fig = PyPlot.figure()
+    end
+    ax = PyPlot.matplotlib.pyplot.gca() # или fig.add_subplot(111) если возможно
+    
+    ReMesh = reshape(data, (mesh.nx, mesh.ny))'
+    cax = PyPlot.matshow(ReMesh)
+    PyPlot.colorbar(cax)
+    PyPlot.show()
+    
     return fig
+end
 
 #-----------------------------------------------------------------------------------------------------------------------
-def ReadFracture(filename):
-    with open(filename, 'rb') as input:
-        return dill.load(input)
+"""
+    read_fracture(filename)
+
+Read a fracture object from a JLD2 file.
+
+# Arguments
+- `filename::String`: The name of the .jld2 file to read from.
+
+# Returns
+- The loaded fracture object.
+"""
+function read_fracture(filename::String)
+    if !endswith(filename, ".jld2")
+        filename = filename * ".jld2"
+    end
+    return JLD2.load(filename)
+end
 
 #-----------------------------------------------------------------------------------------------------------------------
 
-def save_images_to_video(image_folder, video_name='movie'):
+"""
+    save_images_to_video(image_folder, video_name="movie")
 
-    import cv2
-    import os
-    log = logging.getLogger('PyFrac.save_images_to_video')
-    if ".avi" not in video_name:
-        video_name = video_name + '.avi'
+Save .png images from a folder to a video file using FFMPEG.
 
-    images = [img for img in os.listdir(image_folder) if img.endswith(".png")]
-    frame = cv2.imread(os.path.join(image_folder, images[0]))
-    height, width, layers = frame.shape
+# Arguments
+- `image_folder::String`: The folder containing .png images.
+- `video_name::String`: The name of the output video file (default: "movie").
+                     The function will ensure it has a common video extension like .mp4 or .avi.
+"""
+function save_images_to_video(image_folder::String, video_name::String="movie")
+    if !occursin(r"\.(mp4|avi|mov|mkv)$", video_name)
+        video_name = video_name * ".mp4"
+    end
 
-    video = cv2.VideoWriter(video_name, -1, 1, (width,height))
+    images = filter(f -> endswith(f, ".png"), readdir(image_folder))
+    sort!(images)
 
-    img_no = 0
-    for image in images:
-        log.info("adding image no " + repr(img_no))
-        video.write(cv2.imread(os.path.join(image_folder, image)))
-        cv2.waitKey(1)
-        img_no += 1
+    if isempty(images)
+        @warn "No .png images found in folder $image_folder"
+        return
+    end
+    first_image_path = joinpath(image_folder, images[1])
 
-    cv2.destroyAllWindows()
-    video.release()
+    if !isfile(first_image_path)
+         @error "First image file not found: $first_image_path"
+         return
+    end
+
+
+    temp_list_file = tempname() * ".txt"
+    try
+        open(temp_list_file, "w") do f
+            for img in images
+                println(f, "file '$(joinpath(image_folder, img))'")
+            end
+        end
+
+        # FFMPEG
+        # -r 1: input shots frequency 1 shot/sec
+        # -f concat -safe 0: use file-list
+        # -c:v libx264: use codec H.264
+        # -pix_fmt yuv420p: pixel format
+        # -y: rewrite output file
+        cmd = `$(
+            FFMPEG.exe(
+                "-r", "1",
+                "-f", "concat",
+                "-safe", "0",
+                "-i", temp_list_file,
+                "-c:v", "libx264",
+                "-pix_fmt", "yuv420p",
+                "-y",
+                video_name
+            )
+        )`
+        @debug "Running FFMPEG command: $cmd"
+        run(cmd)
+
+        @info "Video saved as $video_name"
+
+    catch e
+        @error "Failed to create video" exception=(e, catch_backtrace())
+    finally
+        if isfile(temp_list_file)
+            rm(temp_list_file, force=true)
+        end
+    end
+end
 
 #-----------------------------------------------------------------------------------------------------------------------
-import sys
-import logging
-def logging_level(logging_level_string):
-    """
-    This function returns the pertinent logging level based on the string received as input.
+"""
+    logging_level(logging_level_string)
 
-    :param logging_level_string: string that defines the level of logging:
-                                 'debug' - Detailed information, typically of interest only when diagnosing problems.
-                                 'info' - Confirmation that things are working as expected.
-                                 'warning' - An indication that something unexpected happened, or indicative of some problem in the near future (e.g. ‘disk space low’). The software is still working as expected.
-                                 'error' - Due to a more serious problem, the software has not been able to perform some function.
-                                 'critical' - A serious error, indicating that the program itself may be unable to continue running.
-    :return: code representing the logging error
-    """
-    if logging_level_string in ['debug', 'Debug', 'DEBUG']:
-        return logging.DEBUG
-    elif logging_level_string in ['info', 'Info', 'INFO']:
-        return logging.INFO
-    elif logging_level_string in ['warning', 'Warning', 'WARNING']:
-        return logging.WARNING
-    elif logging_level_string in ['error', 'Error', 'ERROR']:
-        return logging.ERROR
-    elif logging_level_string in ['critical', 'Critical', 'CRITICAL']:
-        return logging.CRITICAL
-    else:
-        SystemExit('Options are: debug, info, warning, error, critical')
+This function returns the pertinent logging level based on the string received as input.
 
-def setup_logging_to_console(verbosity_level='debug'):
-    """This function sets up the log to the console
-        Note: from any module in the code you can use the logging capabilities. You just have to:
+# Arguments
+- `logging_level_string::String`: string that defines the level of logging:
+    - 'debug' - Detailed information, typically of interest only when diagnosing problems.
+    - 'info' - Confirmation that things are working as expected.
+    - 'warning' - An indication that something unexpected happened, or indicative of some problem in the near future.
+    - 'error' - Due to a more serious problem, the software has not been able to perform some function.
 
-        1) import the module
+# Returns
+- Logging level code (e.g., Logging.Debug).
+"""
+function logging_level(logging_level_string::String)::LogLevel
+    level_map = Dict{String, LogLevel}(
+        "debug" => Logging.Debug,
+        "Debug" => Logging.Debug,
+        "DEBUG" => Logging.Debug,
+        "info" => Logging.Info,
+        "Info" => Logging.Info,
+        "INFO" => Logging.Info,
+        "warning" => Logging.Warn,
+        "Warning" => Logging.Warn,
+        "WARNING" => Logging.Warn,
+        "error" => Logging.Error,
+        "Error" => Logging.Error,
+        "ERROR" => Logging.Error,
+    )
 
-        import logging
+    if haskey(level_map, logging_level_string)
+        return level_map[logging_level_string]
+    else
+        error("Options are: debug, info, warning, error, critical. Got: $logging_level_string")
+    end
+end
 
-        2) create a child of the logger named 'PyFrac' defined in this function. Use a pertinent name as 'Pyfrac.frontrec'
+"""
+    setup_logging_to_console(verbosity_level="debug")
 
-        logger1 = logging.getLogger('PyFrac.frontrec')
+This function sets up the log to the console.
+Note: from any module in the code you can use the logging capabilities. You just have to:
 
-        3) use the object to send messages in the module, such as
+1) import the Logging module
+   using Logging
 
-        logger1.debug('debug message')
-        logger1.info('info message')
-        logger1.warning('warn message')
-        logger1.error('error message')
-        logger1.critical('critical message')
+2) use the logging macros with a _group, such as 'JFrac.general' or 'JFrac.frontrec'
+   @debug "debug message" _group="JFrac.frontrec"
+   @info "info message" _group="JFrac.general"
+   @warn "warn message" _group="JFrac.whatever"
+   @error "error message" _group="JFrac.error"
 
-        4) IMPORTANT TO KNOW:
-           1-If you want to log only to the console in the abobe example you have to use: logger1 = logging.getLogger('PyFrac_LC.frontrec')
-           2-SystemExit and KeyboardInterrupt exceptions are never swallowed by the logging package .
+# Arguments
+- `verbosity_level::String`: string that defines the level of logging concerning the console:
+    - 'debug'    - Detailed information, typically of interest only when diagnosing problems.
+    - 'info'     - Confirmation that things are working as expected.
+    - 'warning'  - An indication that something unexpected happened, or indicative of some problem in the near future.
+    - 'error'    - Due to a more serious problem, the software has not been able to perform some function.
+"""
+function setup_logging_to_console(verbosity_level::String="debug")
+    
+    console_lvl = logging_level(verbosity_level)
+    console_logger = ConsoleLogger(stderr, console_lvl)
 
-    :param verbosity_level: string that defines the level of logging concerning the console:
-                                 'debug'    - Detailed information, typically of interest only when diagnosing problems.
-                                 'info'     - Confirmation that things are working as expected.
-                                 'warning'  - An indication that something unexpected happened, or indicative of some
-                                              problem in the near future (e.g. ‘disk space low’). The software is still
-                                              working as expected.
-                                 'error'    - Due to a more serious problem, the software has not been able to perform
-                                              some function.
-                                 'critical' - A serious error, indicating that the program itself may be unable to
-                                              continue running.
-    :return: -
-    """
-    consoleLvl = logging_level(verbosity_level)
+    jfrac_filter(logger_args) = begin
+        group_name = getfield(logger_args.group, :name)
+        return startswith(string(group_name), "JFrac")
+    end
+    filtered_logger = EarlyFilteredLogger(jfrac_filter, console_logger)
 
-    logger = logging.getLogger('PyFrac')
-    logger.setLevel(logging.DEBUG)
+    global_logger(filtered_logger)
+    @info "Console logger set up correctly" _group="JFrac.general"
 
-    # create console handler with a higher log level
-    ch = logging.StreamHandler(stream = sys.stdout)
-    ch.setLevel(consoleLvl)
-
-    # create formatter and add it to the handlers
-    formatterch = logging.Formatter(fmt='%(levelname)-8s:     %(message)s')
-    ch.setFormatter(formatterch)
-
-    # add the handlers to logger
-    logger.addHandler(ch)
-
-    log = logging.getLogger('PyFrac.general')
-    log.info('Console logger set up correctly')
-
-    # create a logger that logs only to the console and not on the file:
-    logger_to_console = logging.getLogger('PyFrac_LC')
-    logger_to_console.setLevel(logging.DEBUG)
-
-    # add the handlers to logger
-    logger_to_console.addHandler(ch)
-
-    # usage example
-    # logger_to_files = logging.getLogger('PyFrac_LF.set_logging_to_file')
-    # logger_to_files.info('this comment will go only to the log file')
+    return nothing
+end
+end
