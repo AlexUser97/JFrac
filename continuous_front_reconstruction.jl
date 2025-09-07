@@ -1,151 +1,222 @@
 # -*- coding: utf-8 -*-
 """
-This file is part of PyFrac.
+This file is a part of JFrac.
+Realization of Pyfrac on Julia language.
 
-Created by Carlo Peruzzo on 01.01.19.
-Copyright (c) ECOLE POLYTECHNIQUE FEDERALE DE LAUSANNE, Switzerland, Geo-Energy Laboratory, 2016-2020.
-All rights reserved. See the LICENSE.TXT file for more details.
 """
+module ContinuousFrontReconstruction
 
-import numpy as np
-import logging
-import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
-from properties import PlotProperties
-from matplotlib.collections import PatchCollection
-from level_set import *
+include("properties.jl")
+include("level_set.jl")
+using .Properties: PlotProperties
+using .LevelSet: 
+using PyPlot
+import PyPlot: plotgrid
 
-def plotgrid(mesh,ax):
-    """Plots the 2D mesh grid
-    :param mesh: mesh object
-    :param ax: a list of axes of a matplotlib.pyplot.figure object
-    :return: nothing - it only plots the mesh grid
-    """
 
+
+"""
+    plotgrid(mesh, ax)
+
+Plots the 2D mesh grid
+
+# Arguments
+- `mesh::CartesianMesh`: mesh object
+- `ax::PyPlot.PyObject`: an axes object from a PyPlot figure
+
+# Returns
+- nothing - it only plots the mesh grid
+"""
+function plotgrid(mesh::CartesianMesh, ax::PyPlot.PyObject)
     # set the four corners of the rectangular mesh
     ax.set_xlim([-mesh.Lx - mesh.hx / 2, mesh.Lx + mesh.hx / 2])
     ax.set_ylim([-mesh.Ly - mesh.hy / 2, mesh.Ly + mesh.hy / 2])
 
-    # add rectangle for each cell
-    patches = []
-    for i in range(mesh.NumberOfElts):
-        polygon = mpatches.Polygon(np.reshape(mesh.VertexCoor[mesh.Connectivity[i], :], (4, 2)), True)
-        patches.append(polygon)
+    # Add rectangle for each cell
+    patches = PyPlot.matplotlib.patches.Patch[]
 
-    # if plot_prop is None:
+    for i in 1:mesh.NumberOfElts
+        vertex_indices = mesh.Connectivity[i, :]
+        vertices = mesh.VertexCoor[vertex_indices, :]
+
+        polygon = PyPlot.matplotlib.patches.Polygon(vertices, true)
+        push!(patches, polygon)
+    end
+
     plot_prop = PlotProperties()
-    plot_prop.alpha = 0.65
-    plot_prop.lineColor = '0.5'
-    plot_prop.lineWidth = 0.2
 
-    p = PatchCollection(patches,
-                        cmap=plot_prop.colorMap,
-                        alpha=plot_prop.alpha,
-                        edgecolor=plot_prop.meshEdgeColor,
-                        linewidth=plot_prop.lineWidth)
+    # Создаем коллекцию патчей
 
-    colors = np.full((mesh.NumberOfElts,), 0.5)
+    p = PyPlot.matplotlib.collections.PatchCollection(
+        patches,
+        alpha=plot_prop.alpha,
+        edgecolor=plot_prop.lineColor,
+        linewidth=plot_prop.lineWidth
+    )
 
-    p.set_array(np.array(colors))
     ax.add_collection(p)
-    plt.axis('equal')
+    ax.axis("equal")
 
-def plot_cell_lists(mesh,list,fig=None, mycolor='g',mymarker="_",shiftx=0.01,shifty=0.01,annotate_cellName=False, grid=True):
-    """Plot an identifier at the position of each cell in a given list.
+    return nothing
+end
 
-    Use this function to plot even more than one list and see the difference between them.
-    You can customize the color, specify the shift of the identifier with respect to the cell center.
-    You can customize the marker used for the identifier.
+"""
+    plot_cell_lists(mesh, list; fig=nothing, mycolor="g", mymarker="_", shiftx=0.01, shifty=0.01, annotate_cellName=false, grid=true)
 
-    :param mesh: mesh object
-    :param list: a list of int representing the cell names you want to mark
-    :param fig: a matplotlib.pyplot.figure object
-    :param mycolor: a valid string that specify the color - see matplotlib.pyplot.plot documentation
-    :param mymarker: a valid format string characters to control the marker - see matplotlib.pyplot.plot documentation
-    :param shiftx: float representing the amount of shift of the identifier from the cell center. The number represents the percentage of the cell size in x direction to be added to the coordinate of the cell center
-    :param shifty: float representing the amount of shift of the identifier from the cell center. The number represents the percentage of the cell size in y direction to be added to the coordinate of the cell center
-    :param annotate_cellName: True or False, (or equivalent to the booleans 1 and 0) to decide if you want to plot the cell name
-    :param grid: True or False, (or equivalent to the booleans 1 and 0) to decide if you want to plot the grid
-    :return: matplotlib.pyplot.figure object
-    """
+Plot an identifier at the position of each cell in a given list.
 
-    if fig is None:
-        fig = plt.figure()
+Use this function to plot even more than one list and see the difference between them.
+You can customize the color, specify the shift of the identifier with respect to the cell center.
+You can customize the marker used for the identifier.
+
+# Arguments
+- `mesh::CartesianMesh`: mesh object
+- `list::Vector{Int}`: a list of int representing the cell names you want to mark
+- `fig::Union{PyPlot.Figure, Nothing}=nothing`: a PyPlot figure object. If `nothing`, a new figure is created.
+- `mycolor::String="g"`: a valid string that specify the color
+- `mymarker::String="_"`: a valid marker string to control the marker
+- `shiftx::Float64=0.01`: float representing the amount of shift of the identifier from the cell center. The number represents the percentage of the cell size in x direction.
+- `shifty::Float64=0.01`: float representing the amount of shift of the identifier from the cell center. The number represents the percentage of the cell size in y direction.
+- `annotate_cellName::Bool=false`: True or False to decide if you want to plot the cell name
+- `grid::Bool=true`: True or False to decide if you want to plot the grid
+
+# Returns
+- `PyPlot.Figure`: the figure object
+"""
+function plot_cell_lists(mesh::CartesianMesh, list::Vector{Int}; 
+                         fig::Union{PyPlot.Figure, Nothing}=nothing, 
+                         mycolor::String="g", mymarker::String="_", 
+                         shiftx::Float64=0.01, shifty::Float64=0.01,
+                         annotate_cellName::Bool=false, grid::Bool=true)
+
+    local ax
+    if fig === nothing
+        fig = PyPlot.figure()
         ax = fig.add_subplot(111)
-    else:
-        ax = fig.get_axes()[0]
+    else
+        ax = fig.get_axes()[1]
+    end
 
-    plt.plot(mesh.CenterCoor[list, 0] + mesh.hx * shiftx,
-             mesh.CenterCoor[list, 1] + mesh.hy * shifty, ".",marker=mymarker, color=mycolor)
+    x_positions = mesh.CenterCoor[list, 1] .+ mesh.hx .* shiftx
+    y_positions = mesh.CenterCoor[list, 2] .+ mesh.hy .* shifty
+    
+    ax.plot(x_positions, y_positions, marker=mymarker, color=mycolor, linestyle="none")
 
-    if annotate_cellName:
-        x_center = mesh.CenterCoor[list,0]
-        y_center = mesh.CenterCoor[list,1]
-        for i, txt in enumerate(list):
-            ax.annotate(txt, (x_center[i], y_center[i]))
-    if grid:
+    if annotate_cellName
+        x_center = mesh.CenterCoor[list, 1]
+        y_center = mesh.CenterCoor[list, 2]
+        for (i, txt) in enumerate(list)
+            ax.annotate(string(txt), (x_center[i], y_center[i]))
+        end
+    end
+
+    if grid
         plotgrid(mesh, ax)
-    plt.show()
+    end
+    PyPlot.show()
     return fig
+end
 
-def plot_ray_tracing_numpy_results(mesh,x,y,poly,inside):
-    """plot the results from the function "ray_tracing_numpy"
+"""
+    plot_ray_tracing_numpy_results(mesh, x, y, poly, inside)
 
-    :param mesh: mesh object
-    :param x: an array containing the x coordinates of the points tested e.g.: np.asarray([[0.,5.]])
-    :param y: an array containing the y coordinates of the points tested e.g.: np.asarray([[0.,5.]])
-    :param poly: a matrix containing the x and y coordinated of the polygon e.g.: np.asarray([[-1,-1],[1,-1],[0,1]])
-    :param inside: inside is a binary vector containing 1 (true) and 0 (false) that results from the function ray_tracing_numpy_results
-    :return: nothing - it only plots the mesh grid
-    """
-    fig = plt.figure()
-    plt.plot(x[np.nonzero(inside)], y[np.nonzero(inside)], '.', color='Green')
-    outidx = np.setdiff1d(np.arange(inside.size), np.nonzero(inside))
-    plt.plot(x[ outidx], y[ outidx], 'x', color='Red')
-    plt.plot(poly[:, 0], poly[:, 1], '.-', color='Blue')
-    # set the four corners of the rectangular mesh
-    ax = fig.get_axes()[0]
+Plot the results from the function "ray_tracing_numpy"
+
+# Arguments
+- `mesh::CartesianMesh`: mesh object
+- `x::Vector{Float64}`: an array containing the x coordinates of the points tested
+- `y::Vector{Float64}`: an array containing the y coordinates of the points tested
+- `poly::Matrix{Float64}`: a matrix containing the x and y coordinates of the polygon
+- `inside::Vector{Int}`: inside is a binary vector containing 1 (true) and 0 (false) that results from the function ray_tracing_numpy
+
+# Returns
+- nothing - it only plots the mesh grid
+"""
+function plot_ray_tracing_numpy_results(mesh::CartesianMesh, 
+                                      x::Vector{Float64}, 
+                                      y::Vector{Float64}, 
+                                      poly::Matrix{Float64}, 
+                                      inside::Vector{Int})
+    fig = PyPlot.figure()
+    inside_indices = findall(!iszero, inside)
+    if !isempty(inside_indices)
+        plt.plot(x[inside_indices], y[inside_indices], marker=".", color="Green", linestyle="none")
+    end
+    
+    outside_indices = findall(iszero, inside)
+    
+    if !isempty(outside_indices)
+        plt.plot(x[outside_indices], y[outside_indices], marker="x", color="Red", linestyle="none")
+    end
+    
+    if size(poly, 1) > 0
+        poly_x = [poly[:, 1]; poly[1, 1]]
+        poly_y = [poly[:, 2]; poly[1, 2]]
+        plt.plot(poly_x, poly_y, marker=".", color="Blue", linestyle="-")
+    end
+    
+    ax = fig.get_axes()[1]
     plotgrid(mesh, ax)
+    return nothing
+end
 
-def ray_tracing_numpy(x,y,poly):
-    """given a polygon this function tests if each of the points in a given set is inside or outside
+"""
+    ray_tracing_numpy(x, y, poly)
 
-    The answer is obtained by drawing an horizontal line on the right side of the point
+given a polygon this function tests if each of the points in a given set is inside or outside
 
-    :param x: an array containing the x coordinates of the points to be tested e.g.: np.asarray([[0.,5.]])
-    :param y: an array containing the y coordinates of the points to be tested e.g.: np.asarray([[0.,5.]])
-    :param poly: a matrix containing the x and y coordinated of the poligons e.g.: np.asarray([[-1,-1],[1,-1],[0,1]])
-    :return: an array of booleans ordered as x
-    """
+The answer is obtained by drawing an horizontal line on the right side of the point
 
+# Arguments
+- `x::Vector{Float64}`: an array containing the x coordinates of the points to be tested e.g.: np.asarray([[0.,5.]])
+- `y::Vector{Float64}`: an array containing the y coordinates of the points to be tested e.g.: np.asarray([[0.,5.]])
+- `poly::Matrix{Float64}`: a matrix containing the x and y coordinated of the poligons e.g.: np.asarray([[-1,-1],[1,-1],[0,1]])
+
+# Returns
+- `::Vector{Bool}`: an array of booleans ordered as x
+"""
+function ray_tracing_numpy(x::Vector{Float64}, y::Vector{Float64}, poly::Matrix{Float64})::Vector{Bool}
     # make the array with the answer at the points (np.bool_ : Boolean(True or False) stored as a byte)
     # assume that the points are all outside (0 is false)
-    if isinstance(x, (int, float, complex)) and not isinstance(x, bool):
-        x = np.asarray([[x]])
-        y = np.asarray([[y]])
-    inside = np.zeros(x.shape[1],np.bool_)
+    # Handle scalar inputs
+    if isa(x, Number) && isa(y, Number)
+        x = [x]
+        y = [y]
+    end
+    
+    # make the array with the answer at the points
+    # assume that the points are all outside (false)
+    inside = falses(length(x))
 
     # initializing the parameters
     p2x = 0.0
     p2y = 0.0
     xints = 0.0
-    p1x,p1y = poly[0]
-    n = poly.shape[0]
-    for i in range(n+1): # i in [0,1,...,n]
-        p2x,p2y = poly[i % n] # modulo returns the first index when the element n is called (starting from 0)
+    p1x, p1y = poly[1, 1], poly[1, 2]
+    n = size(poly, 1)
+    
+    for i in 1:(n+1) # i in [0,1,...,n]
+        # modulo returns the first index when the element n is called (starting from 0)
+        idx_mod = (i % n == 0) ? n : (i % n)
+        p2x, p2y = poly[idx_mod, 1], poly[idx_mod, 2]
+        
         # compute the indexes of the points from which an horizontal line might intersect with the segment
-        idx = np.nonzero((y > min(p1y,p2y)) & (y <= max(p1y,p2y)) & (x <= max(p1x,p2x)))[1] # 0 is False, 1 is True
+        # In Julia: findall для получения индексов, логические операторы &, |, !
+        condition1 = (y .> min(p1y, p2y)) .& (y .<= max(p1y, p2y)) .& (x .<= max(p1x, p2x))
+        idx_points = findall(condition1) # 1 is True in Julia (1-based indexing)
 
         # if the front segment is not horizontal compute the x coord of the intersection of an horizontal line and the
         # front only in the case the front is on the right side of the point (this latter requirement is expressed by
         # the fact that we are taking y[idx]
-        if p1y != p2y:
-            xints = (y[0,idx]-p1y)*(p2x-p1x)/(p2y-p1y)+p1x #-->this might give problems of tolerance
+        if p1y != p2y
+            y_subset = y[idx_points]
+            x_subset = x[idx_points]
+            xints_vals = (y_subset .- p1y) .* (p2x - p1x) / (p2y - p1y) .+ p1x #-->this might give problems of tolerance
+        end
 
         # if the segment is vertical switch directly from true to false and vice versa
-        if p1x == p2x:
-            inside[idx] = ~inside[idx]
-
+        if p1x == p2x
+            inside[idx_points] .= .!inside[idx_points]
         # if the segment is NOT vertical you have to decide:
         #      p1
         #       \          outside
@@ -157,61 +228,98 @@ def ray_tracing_numpy(x,y,poly):
         #                   p2
         #
         # if x < xints the point is inside, otherwise it is outside
-        elif not idx.size == 0 :
-            idxx = idx[x[0,idx] <= xints]
-            inside[idxx] = ~inside[idxx]
+        elseif !isempty(idx_points)
+            if p1y != p2y # Только если предыдущее условие выполнялось
+                condition2 = x_subset .<= xints_vals
+                idx_final = idx_points[condition2]
+            else
+                idx_final = Int[]
+            end
+            inside[idx_final] .= .!inside[idx_final]
+        end
 
-        p1x,p1y = p2x,p2y
+        p1x, p1y = p2x, p2y
+    end
 
     return inside
+end
 
-def find_indexes_repeatd_elements(list):
-    """This function returns all the indexes of the repeated elements
+"""
+    find_indexes_repeatd_elements(list)
 
-    Example: giving the following list:
-          0  1  2  3  4  5  6  7
-    list=[10,15,33,33,18,22,16,22]
-    it returns all indexes of repeated elements [2,3,5,7]
+This function returns all the indexes of the repeated elements
 
-    :param arr: list e.g.: [10,15,33,33,18,22,16,22]
-    :return: list with all the indexes of the repeated elements
+Example: giving the following list:
+      0  1  2  3  4  5  6  7
+list=[10,15,33,33,18,22,16,22]
+it returns all indexes of repeated elements [2,3,5,7]
+
+# Arguments
+- `list::Vector`: list e.g.: [10,15,33,33,18,22,16,22]
+
+# Returns
+- `Vector{Int}`: list with all the indexes of the repeated elements
+"""
+function find_indexes_repeatd_elements(list::Vector)::Vector{Int}
+    sort_indexes = sortperm(list)
+    sorted_list = list[sort_indexes]
+    vals, first_indexes = unique(sorted_list, dims=1, keepdims=true)
+    
+    unique_vals = unique(list)
+    counts = [count(==(val), list) for val in unique_vals]
+    first_occurrence_indices = [findfirst(==(val), list) for val in unique_vals]
+    
+    value_to_indices = Dict{eltype(list), Vector{Int}}()
+    
+    for (i, val) in enumerate(list)
+        if !haskey(value_to_indices, val)
+            value_to_indices[val] = Int[]
+        end
+        push!(value_to_indices[val], i)
+    end
+    repeated_indices = Int[]
+    for (val, indices) in value_to_indices
+        if length(indices) > 1
+            append!(repeated_indices, indices)
+        end
+    end
+    sort!(repeated_indices)
+    return repeated_indices
+end
+
+"""
+    Point
+This class represents the concept of a point
+"""
+mutable struct Point
+    name::String
+    x::Float64
+    y::Float64
     """
-    sort_indexes = np.argsort(list)
-    list = np.asarray(list)[sort_indexes]
-    vals, first_indexes,  counts = np.unique(list,
-        return_index=True, return_counts=True)
-    indexes = np.split(sort_indexes, first_indexes[1:])
-    for x in indexes:
-        x.sort()
-    duplicates_positions_in_indexes = np.where(counts > 1)[0]
-    if duplicates_positions_in_indexes.size > 0 :
-        indexes_of_all_repeated = itertools_chain_from_iterable([indexes[j] for j in np.where(counts > 1)[0]])
-        return indexes_of_all_repeated
-    else: return []
-
-class Point:
-    """This class represents the concept of a point
+        Point(name, x, y)
+    Constructor method
+    # Arguments
+    - `name::String`: point name
+    - `x::Float64`: x coordinate of a point
+    - `y::Float64`: y coordinate of a point
     """
-    # Define the object point
-    def __init__(self,name,x,y):
-        """Constructor method
+    function Point(name::String, x::Float64, y::Float64)
+        new(name, x, y)
+    end
+end
 
-        :param name: point name
-        :param x: x coordinate of a point
-        :param y: y coordinate of a point
-        """
-        self.name = name
-        self.x = x
-        self.y = y
-
-def distance(p1, p2):
-    """compute the euclidean distance between the two points
-
-    :param p1: object of type Point - first point
-    :param p2: object of type Point - second point
-    :return: float - euclidean distance between the points
-    """
-    return np.sqrt((-p1.x + p2.x)**2 + (-p1.y + p2.y)**2)
+"""
+    distance(p1, p2)
+Compute the euclidean distance between the two points
+# Arguments
+- `p1::Point`: object of type Point - first point
+- `p2::Point`: object of type Point - second point
+# Returns
+- `Float64`: euclidean distance between the points
+"""
+function distance(p1::Point, p2::Point)::Float64
+    return sqrt((-p1.x + p2.x)^2 + (-p1.y + p2.y)^2)
+end
 
 def copute_area_of_a_polygon(x,y):
     """use the Shoelace formula (Gauss area formula or surveyor's formula) to compute the area of a polygon
