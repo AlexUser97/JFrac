@@ -13,6 +13,13 @@ include("mesh.jl")
 include("labels.jl")
 using .Mesh: CartesianMesh, locate_element 
 
+export MaterialProperties, FluidProperties, InjectionProperties, LoadingProperties, SimulationProperties,
+       set_logging_to_file, set_tipAsymptote, get_tipAsymptote, set_viscousInjection, get_viscousInjection, set_volumeControl,
+       get_volumeControl, set_dryCrack_mechLoading, get_dryCrack_mechLoading, set_outputFolder, get_outputFolder, set_solTimeSeries,
+       get_solTimeSeries, set_simulation_name, get_simulation_name, get_timeStamp, get_time_step_prefactor,
+       set_mesh_extension_direction, get_mesh_extension_direction, set_mesh_extension_factor, get_mesh_extension_factor, 
+       IterationProperties, PlotProperties, LabelProperties
+
 
 """
 to_rgb(color)
@@ -1656,9 +1663,7 @@ function get_mesh_extension_factor(self::SimulationProperties)::Vector{Float64}
     return self.meshExtensionFactor
 end
 
-
 # -----------------------------------------------------------------------------------------------------------------------
-
 
 """
     IterationProperties
@@ -1851,8 +1856,6 @@ function instrument_close(perfNode::IterationProperties, perfNode_subItr::Iterat
     
     return nothing
 end
-
-
 # -----------------------------------------------------------------------------------------------------------------------
 
 """
@@ -1966,8 +1969,6 @@ function PlotProperties(color_map::Union{String, Nothing}=nothing,
         colorsList_val
     )
 end
-
-
 # -----------------------------------------------------------------------------------------------------------------------
 
 """

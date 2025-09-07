@@ -1,10 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-This file is part of PyFrac.
+This file is part of JFrac.
+Realization of Pyfrac on Julia language.
 
-Created by Haseeb Zia on Thu Dec 22 17:18:37 2016.
-Copyright (c) "ECOLE POLYTECHNIQUE FEDERALE DE LAUSANNE, Switzerland, Geo-Energy Laboratory", 2016-2020.
-All rights reserved. See the LICENSE.TXT file for more details.
 """
 
 import numpy as np
@@ -26,7 +24,7 @@ using PyPlot
 using FilePathsBase: joinpath
 using Base.Filesystem: readdir, endswith
 
-export logging_level, setup_logging_to_console
+export plot_as_matrix, read_fracture, save_images_to_video, logging_level, setup_logging_to_console
 
 
 """
