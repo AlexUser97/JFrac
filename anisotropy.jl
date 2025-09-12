@@ -11,6 +11,8 @@ include("volume_integral.jl")
 using .LevelSet: reconstruct_front_LS_gradient
 using .VolumeIntegral: Integral_over_cell
 
+export TI_plain_strain_modulus, projection_from_ribbon, find_angle, construct_polygon, projection_from_ribbon_LS_gradient, get_toughness_from_cellCenter
+
 """
     projection_from_ribbon(ribbon_elts, channel_elts, mesh, sgnd_dist)
 

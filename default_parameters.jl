@@ -8,7 +8,6 @@ This file defines the default simulation parameters for PyFrac.jl.
 
 module default_parameters
 
-    # Экспортируем все константы, которые будут использоваться снаружи
     export toleranceFractureFront, toleranceEHL, tol_projection, toleranceVStagnant,
            Hersh_Bulk_epsilon, Hersh_Bulk_Gmin, max_front_itrs, max_solver_itrs,
            max_proj_Itrs, tmStp_prefactor, req_sol_at, final_time, maximum_steps,

@@ -1,472 +1,468 @@
 # -*- coding: utf-8 -*-
 """
-This file is part of PyFrac.
+This file is a part of JFrac.
+Realization of Pyfrac on Julia language.
 
-Created by Haseeb Zia on 11.05.17.
-Copyright (c) ECOLE POLYTECHNIQUE FEDERALE DE LAUSANNE, Switzerland, Geo-Energy Laboratory, 2016-2021.
-All rights reserved. See the LICENSE.TXT file for more details.
 """
-import logging
-import copy
-import matplotlib.pyplot as plt
-import dill
-import os
-import numpy as np
-import time
-from time import gmtime, strftime
-import warnings
 
-# local imports
-from properties import LabelProperties, IterationProperties, PlotProperties
-from properties import instrument_start, instrument_close
-from elasticity import load_isotropic_elasticity_matrix, load_TI_elasticity_matrix, mapping_old_indexes
-from elasticity import load_isotropic_elasticity_matrix_toepliz
-from mesh import CartesianMesh
-from time_step_solution import attempt_time_step
-from visualization import plot_footprint_analytical, plot_analytical_solution,\
-                          plot_injection_source, get_elements
-from symmetry import load_isotropic_elasticity_matrix_symmetric, symmetric_elasticity_matrix_from_full
-from labels import TS_errorMessages, supported_projections, suitable_elements
+module Controller
+
+using Logging
+using LinearAlgebra
+using PyPlot
+using Dates
+using JLD2
+using Printf
+
+using .Properties: LabelProperties, IterationProperties, PlotProperties, instrument_start, instrument_close
+using .Elasticity: load_isotropic_elasticity_matrix, load_TI_elasticity_matrix, mapping_old_indexes,
+                  load_isotropic_elasticity_matrix_toepliz, load_isotropic_elasticity_matrix_symmetric,
+                  symmetric_elasticity_matrix_from_full
+using .Mesh: CartesianMesh
+using .TimeStepSolution: attempt_time_step
+using .Visualization: plot_footprint_analytical, plot_analytical_solution, plot_injection_source, get_elements
+using .Symmetry: ... 
+using .Labels: TS_errorMessages, supported_projections, suitable_elements
+
+export Controller
 
 
-class Controller:
+
+"""
+    Controller
+
+Этот класс описывает контроллер, который принимает заданные свойства материала, жидкости,
+инъекции и нагрузки и продвигает заданную трещину в соответствии с предоставленными
+свойствами симуляции.
+"""
+mutable struct Controller
+    const errorMessages::Dict
+    fracture::Fracture
+    solid_prop::MaterialProperties
+    fluid_prop::FluidProperties
+    injection_prop::InjectionProperties
+    sim_prop::SimulationProperties
+    load_prop::Union{Nothing, Any}
+    C::Union{Nothing, Array{Float64}}
+    fr_queue::Vector{Union{Nothing, Any}}
+    stepsFromChckPnt::Int
+    tmStpPrefactor_copy::Any
+    stagnant_TS::Union{Nothing, Float64}
+    perfData::Vector{Any} 
+    lastSavedFile::Int
+    lastSavedTime::Float64
+    lastPlotTime::Float64
+    TmStpCount::Int
+    chkPntReattmpts::Int
+    TmStpReductions::Int
+    delta_w::Union{Nothing, Any}
+    lstTmStp::Union{Nothing, Any}
+    solveDetlaP_cp::Bool
+    PstvInjJmp::Union{Nothing, Bool}
+    fullyClosed::Bool
+    setFigPos::Bool
+    lastSuccessfulTS::Float64
+    maxTmStp::Float64
+    Figures::Vector{Union{Nothing, Any}} # Vector{Union{Nothing, PyPlot.Figure}}
+    timeToHit::Union{Nothing, Vector{Float64}}
+    remeshings::Int
+    successfulTimeSteps::Int
+    failedTimeSteps::Int
+    frontAdvancing::String
+    logAddress::String
     """
-    This class describes the controller which takes the given material, fluid, injection and loading properties and
-    advances a given fracture according to the provided simulation properties.
+    Constructor for the Controller class.
+
+    # Arguments
+    - `Fracture`:                     -- the fracture to be propagated.
+    - `Solid_prop`:                   -- the MaterialProperties object giving the material properties.
+    - `Fluid_prop`:                   -- the FluidProperties object giving the fluid properties.
+    - `Injection_prop`:               -- the InjectionProperties object giving the injection properties.
+    - `Sim_prop`:                     -- the SimulationProperties object giving the numerical parameters.
+    - `Load_prop`:                    -- the LoadingProperties object specifying mechanical loading.
+    - `C`:                            -- the elasticity matrix.
     """
+    function Controller(Fracture, Solid_prop, Fluid_prop, Injection_prop, Sim_prop, Load_prop=nothing, C=nothing)
 
-    errorMessages = TS_errorMessages
+        obj = new()
+        obj.errorMessages = TS_errorMessages
 
-    def __init__(self, Fracture, Solid_prop, Fluid_prop, Injection_prop, Sim_prop, Load_prop=None, C=None):
-        """ The constructor of the Controller class.
-
-        Args:
-           Fracture (Fracture):                     -- the fracture to be propagated.
-           Solid_prop (MaterialProperties):         -- the MaterialProperties object giving the material properties.
-           Fluid_prop (FluidProperties):            -- the FluidProperties object giving the fluid properties.
-           Injection_prop (InjectionProperties):    -- the InjectionProperties object giving the injection.
-                                                       properties.
-           Sim_prop (SimulationProperties):         -- the SimulationProperties object giving the numerical
-                                                       parameters to be used in the simulation.
-           Load_prop (LoadingProperties):           -- the LoadingProperties object specifying how the material is
-                                                       mechanically loaded.
-           C (ndarray):                             -- the elasticity matrix.
-
-        """
-        log = logging.getLogger('PyFrac.controller')
-        self.fracture = Fracture
-        self.solid_prop = Solid_prop
-        self.fluid_prop = Fluid_prop
-        self.injection_prop = Injection_prop
-        self.sim_prop = Sim_prop
-        self.load_prop = Load_prop
-        self.C = C
-        self.fr_queue = [None, None, None, None, None]  # queue of fractures from the last five time steps
-        self.stepsFromChckPnt = 0
-        self.tmStpPrefactor_copy = copy.copy(Sim_prop.tmStpPrefactor) # should be in simulation properties
-        self.stagnant_TS = None     # time step if the front is stagnant. It is increased exponentialy to avoid uneccessary small steps.
-        self.perfData = []
-        self.lastSavedFile = 0
-        self.lastSavedTime = -np.inf
-        self.lastPlotTime = -np.inf
-        self.TmStpCount = 0
-        self.chkPntReattmpts = 0    # the number of re-attempts done from the checkpoint. Simulation is declared failed after 5 attempts.
-        self.TmStpReductions = 0    # the number of times the time step has been reattempted because the fracture it was advancing too more than two cells in a row
-        self.delta_w = None         # change in width between successive time steps. Used to limit time step.
-        self.lstTmStp = None
-        self.solveDetlaP_cp = self.sim_prop.solveDeltaP # copy of the flag indicating the solver to solve for pressure or delta p
-        self.PstvInjJmp = None      # flag specifyung if the jump to the time of the next positive injection after the fracture is
-                                        # fully closed is to be taken or not. Asked from user if it is None.
-        self.fullyClosed = False    # should be related to the fracture state (thus in fracture class)
-        self.setFigPos = True
-        self.lastSuccessfulTS = Fracture.time
-        self.maxTmStp = 0           # the maximum time step taken uptil now by the controller.
-
+        obj.fracture = Fracture
+        obj.solid_prop = Solid_prop
+        obj.fluid_prop = Fluid_prop
+        obj.injection_prop = Injection_prop
+        obj.sim_prop = Sim_prop
+        obj.load_prop = Load_prop
+        obj.C = C
+        obj.fr_queue = [nothing, nothing, nothing, nothing, nothing]
+        obj.stepsFromChckPnt = 0
+        observedbj.tmStpPrefactor_copy = copy(Sim_prop.tmStpPrefactor)
+        obj.stagnant_TS = nothing
+        obj.perfData = []
+        obj.lastSavedFile = 0
+        obj.lastSavedTime = -Inf
+        obj.lastPlotTime = -Inf
+        obj.TmStpCount = 0
+        obj.chkPntReattmpts = 0
+        obj.TmStpReductions = 0
+        obj.delta_w = nothing
+        obj.lstTmStp = nothing
+        obj.solveDetlaP_cp = Sim_prop.solveDeltaP
+        obj.PstvInjJmp = nothing
+        obj.fullyClosed = false
+        obj.setFigPos = true
+        obj.lastSuccessfulTS = Fracture.time
+        obj.maxTmStp = 0.0
 
         # make a list of Nones with the size of the number of variables to plot during simulation
-        self.Figures = [None for i in range(len(self.sim_prop.plotVar))]
+        obj.Figures = Any[nothing for _ in 1:length(Sim_prop.plotVar)] # Явное указание типа для массива Any
 
-        # Find the times where any parameter changes. These times will be added to the time series where the solution is
-        # required to ensure the time is hit during time stepping and the change is applied at the exact time.
-        param_change_at = np.array([], dtype=np.float64)
-        if Injection_prop.injectionRate.shape[1] > 1:
-           param_change_at = np.hstack((param_change_at, Injection_prop.injectionRate[0]))
-        if isinstance(Sim_prop.fixedTmStp, np.ndarray):
-           param_change_at = np.hstack((param_change_at, Sim_prop.fixedTmStp[0]))
-        if isinstance(Sim_prop.tmStpPrefactor, np.ndarray):
-           param_change_at = np.hstack((param_change_at, Sim_prop.tmStpPrefactor[0]))
+        param_change_at = Float64[] # np.array([], dtype=np.float64)
+        
+        if size(Injection_prop.injectionRate, 2) > 1
+           param_change_at = vcat(param_change_at, Injection_prop.injectionRate[1, :]) # Предполагаем, что injectionRate 2D
+        end
+        if isa(Sim_prop.fixedTmStp, Array) && ndims(Sim_prop.fixedTmStp) == 2
+           param_change_at = vcat(param_change_at, Sim_prop.fixedTmStp[1, :])
+        end
+        if isa(Sim_prop.tmStpPrefactor, Array) && ndims(Sim_prop.tmStpPrefactor) == 2
+           param_change_at = vcat(param_change_at, Sim_prop.tmStpPrefactor[1, :])
+        end
 
-
-        if len(param_change_at) > 0:
-            if self.sim_prop.get_solTimeSeries() is not None:
+        if length(param_change_at) > 0
+            if Sim_prop.get_solTimeSeries() !== nothing
                 # add the times where any parameter changes to the required solution time series
-                sol_time_srs = np.hstack((self.sim_prop.get_solTimeSeries(), param_change_at))
-            else:
+                sol_time_srs = vcat(Sim_prop.get_solTimeSeries(), param_change_at)
+            else
                 sol_time_srs = param_change_at
-            sol_time_srs = np.unique(sol_time_srs)
-            if sol_time_srs[0] == 0:
-                sol_time_srs = np.delete(sol_time_srs, 0)
-        else:
-           sol_time_srs = self.sim_prop.get_solTimeSeries()
-        self.timeToHit = sol_time_srs
+            end
+            sol_time_srs = unique(sol_time_srs)
+            if sol_time_srs[1] == 0.0
+                sol_time_srs = sol_time_srs[2:end]
+            end
+        else
+           sol_time_srs = Sim_prop.get_solTimeSeries()
+        end
+        obj.timeToHit = sol_time_srs
 
-        if self.sim_prop.finalTime is None:
-           if self.sim_prop.get_solTimeSeries() is None:
+        if Sim_prop.finalTime === nothing
+           if Sim_prop.get_solTimeSeries() === nothing
                ## Not necessarily an error
-                raise ValueError("The final time to stop the simulation is not provided!")
-           else:
-               self.sim_prop.finalTime = np.max(self.sim_prop.get_solTimeSeries())
-        else:
-            if self.timeToHit is not None:
-                greater_finalTime = np.where(self.timeToHit > self.sim_prop.finalTime)[0]
-                self.timeToHit = np.delete(self.timeToHit, greater_finalTime)
+                throw(ArgumentError("The final time to stop the simulation is not provided!"))
+           else
+               Sim_prop.finalTime = maximum(Sim_prop.get_solTimeSeries())
+           end
+        else
+            if obj.timeToHit !== nothing
+                greater_finalTime = findall(obj.timeToHit .> Sim_prop.finalTime) # np.where(self.timeToHit > self.sim_prop.finalTime)[0]
+                if !isempty(greater_finalTime)
+                    obj.timeToHit = obj.timeToHit[setdiff(1:length(obj.timeToHit), greater_finalTime)] # np.delete(self.timeToHit, greater_finalTime)
+                end
+            end
+        end
 
         # Setting to volume control solver if viscosity is zero
-        if self.fluid_prop.rheology == 'Newtonian':
-            if isinstance(self.fluid_prop.viscosity, np.ndarray) and np.min(self.fluid_prop.viscosity) < 1e-15:
-                print("Fluid viscosity is zero. Setting solver to volume control...")
-                self.sim_prop.set_volumeControl(True)
-            elif isinstance(self.fluid_prop.viscosity, (int, float)) and self.fluid_prop.viscosity < 1e-15:
-                print("Fluid viscosity is zero. Setting solver to volume control...")
-                self.sim_prop.set_volumeControl(True)
+        if obj.fluid_prop.rheology == "Newtonian"
+            if isa(obj.fluid_prop.viscosity, Array) && minimum(obj.fluid_prop.viscosity) < 1e-15
+                println("Fluid viscosity is zero. Setting solver to volume control...")
+                obj.sim_prop.set_volumeControl(true)
+            elseif (isa(obj.fluid_prop.viscosity, Number)) && obj.fluid_prop.viscosity < 1e-15
+                println("Fluid viscosity is zero. Setting solver to volume control...")
+                obj.sim_prop.set_volumeControl(true)
+            end
+        end
 
-        if self.injection_prop.sourceLocFunc is None:
-            if not all(elem in self.fracture.EltChannel for elem in Injection_prop.sourceElem):
-                message = 'INJECTION LOCATION ERROR: \n' \
-                          'injection points are located outisde of the fracture footprints'
-                raise SystemExit(message)
+        if obj.injection_prop.sourceLocFunc === nothing
+            if !all(in(obj.fracture.EltChannel), Injection_prop.sourceElem) # Проверка, все ли элементы источника находятся в канале
+                message = """INJECTION LOCATION ERROR: 
+injection points are located outisde of the fracture footprints"""
+                throw(ErrorException(message))
+            end
+        end
 
         # Setting whether sparse matrix is used to make fluid conductivity matrix
-        if Sim_prop.solveSparse is None:
-           if Fracture.mesh.NumberOfElts > 2500 or self.injection_prop.modelInjLine:
-               Sim_prop.solveSparse = True
-           else:
-               Sim_prop.solveSparse = False
+        if Sim_prop.solveSparse === nothing
+           # if Fracture.mesh.NumberOfElts > 2500 or self.injection_prop.modelInjLine:
+           if Fracture.mesh.NumberOfElts > 2500 || obj.injection_prop.modelInjLine
+               obj.sim_prop.solveSparse = true
+           else
+               obj.sim_prop.solveSparse = false
+           end
+        end
 
         # basic performance data
-        self.remeshings = 0
-        self.successfulTimeSteps = 0
-        self.failedTimeSteps = 0
+        obj.remeshings = 0
+        obj.successfulTimeSteps = 0
+        obj.failedTimeSteps = 0
 
         # setting front advancing scheme to implicit if velocity is not available for the first time step.
-        self.frontAdvancing = copy.copy(Sim_prop.frontAdvancing)
-        # print(Fracture.v)
-        # print(np.nanmax(Fracture.v) <= 0)
-        # print(np.isnan(Fracture.v).any())
-        
-        if Sim_prop.frontAdvancing in ['explicit', 'predictor-corrector']:
-            if np.nanmax(Fracture.v) <= 0 or np.isnan(Fracture.v).any():
-                Sim_prop.frontAdvancing = 'implicit'
+        obj.frontAdvancing = Sim_prop.frontAdvancing
+        if Sim_prop.frontAdvancing in ["explicit", "predictor-corrector"]
+            # if np.nanmax(Fracture.v) <= 0 or np.isnan(Fracture.v).any():
+            try
+                if maximum(Fracture.v) <= 0.0 || any(isnan, Fracture.v)
+                    obj.sim_prop.frontAdvancing = "implicit"
+                end
+            catch e
+                if isa(e, ArgumentError) && occursin("NaN", string(e))
+                    if all(isnan, Fracture.v) || maximum(filter(!isnan, Fracture.v)) <= 0.0
+                        obj.sim_prop.frontAdvancing = "implicit"
+                    end
+                else
+                    rethrow(e)
+                end
+            end
+        end
 
-        if self.sim_prop.saveToDisk:
-            self.logAddress = copy.copy(Sim_prop.get_outputFolder())
-        else:
-            self.logAddress = './'
+        if obj.sim_prop.saveToDisk
+            obj.logAddress = Sim_prop.get_outputFolder()
+        else
+            obj.logAddress = "./"
+        end
 
         # setting up tip asymptote
-        if self.fluid_prop.rheology in ["Herschel-Bulkley", "HBF"]:
-            if self.sim_prop.get_tipAsymptote() not in ["HBF", "HBF_aprox", "HBF_num_quad"]:
-                warnings.warn("Fluid rhelogy and tip asymptote does not match. Setting tip asymptote to \'HBF\'")
-                self.sim_prop.set_tipAsymptote('HBF')
-        if self.fluid_prop.rheology in ["power-law", "PLF"]:
-            if self.sim_prop.get_tipAsymptote() not in ["PLF", "PLF_aprox", "PLF_num_quad", "PLF_M"]:
-                warnings.warn("Fluid rhelogy and tip asymptote does not match. Setting tip asymptote to \'PLF\'")
-                self.sim_prop.set_tipAsymptote('PLF')
-        if self.fluid_prop.rheology == 'Newtonian':
-            if self.sim_prop.get_tipAsymptote() not in ["K", "M", "Mt", "U", "U1", "MK", "MDR", "M_MDR"]:
-                warnings.warn("Fluid rhelogy and tip asymptote does not match. Setting tip asymptote to \'U\'")
-                self.sim_prop.set_tipAsymptote('U1')
+        if obj.fluid_prop.rheology in ["Herschel-Bulkley", "HBF"]
+            if !(obj.sim_prop.get_tipAsymptote() in ["HBF", "HBF_aprox", "HBF_num_quad"])
+                @warn "Fluid rheology and tip asymptote does not match. Setting tip asymptote to 'HBF'"
+                obj.sim_prop.set_tipAsymptote("HBF")
+            end
+        elseif obj.fluid_prop.rheology in ["power-law", "PLF"]
+            if !(obj.sim_prop.get_tipAsymptote() in ["PLF", "PLF_aprox", "PLF_num_quad", "PLF_M"])
+                @warn "Fluid rheology and tip asymptote does not match. Setting tip asymptote to 'PLF'"
+                obj.sim_prop.set_tipAsymptote("PLF")
+            end
+        elseif obj.fluid_prop.rheology == "Newtonian"
+            if !(obj.sim_prop.get_tipAsymptote() in ["K", "M", "Mt", "U", "U1", "MK", "MDR", "M_MDR"])
+                @warn "Fluid rheology and tip asymptote does not match. Setting tip asymptote to 'U'"
+                obj.sim_prop.set_tipAsymptote("U1")
+            end
+        end
 
-        if self.fluid_prop.rheology != 'Newtonian':
-            self.sim_prop.saveRegime = False
+        if obj.fluid_prop.rheology != "Newtonian"
+            obj.sim_prop.saveRegime = false
+        end
 
         # if you set the code to advance max 1 cell then remove the SimulProp.timeStepLimit
-        if self.sim_prop.timeStepLimit is not None and self.sim_prop.limitAdancementTo2cells is True:
-            if self.sim_prop.forceTmStpLmtANDLmtAdvTo2cells == False:
-                warnings.warn("You have set sim_prop.limitAdancementTo2cells = True. This imply that sim_prop.timeStepLimit will be deactivated.")
-                self.sim_prop.timeStepLimit = None
-            else:
-                warnings.warn(
-                    "You have forced <limitAdancementTo2cells> to be True and set <timeStepLimit> - the first one might be uneffective onto the second one until the prefactor has been reduced to produce a time step < timeStepLimit")
+        if obj.sim_prop.timeStepLimit !== nothing && obj.sim_prop.limitAdancementTo2cells == true
+            if obj.sim_prop.forceTmStpLmtANDLmtAdvTo2cells == false
+                @warn "You have set sim_prop.limitAdancementTo2cells = True. This imply that sim_prop.timeStepLimit will be deactivated."
+                obj.sim_prop.timeStepLimit = nothing
+            else
+                @warn "You have forced <limitAdancementTo2cells> to be True and set <timeStepLimit> - the first one might be uneffective onto the second one until the prefactor has been reduced to produce a time step < timeStepLimit"
+            end
+        end
+
+        return obj
+    end
+end
+
 #-----------------------------------------------------------------------------------------------------------------------
 
-    def run(self):
-        """
-        This function runs the simulation according to the parameters given in the properties classes. See especially
-        the documentation of the :py:class:`properties.SimulationProperties` class to get details of the parameters
-        controlling the simulation run.
-        """
-        log = logging.getLogger('PyFrac.controller.run')
-        log_only_to_logfile = logging.getLogger('PyFrac_LF.controller.run')
+function run(self::Controller)
+    # log = get_logger("JFrac.controller.run")
+    # log_only_to_logfile = get_logger("JFrac_LF.controller.run")
 
-        # output initial fracture
-        if self.sim_prop.saveToDisk:
-            # save properties
-            if not os.path.exists(self.sim_prop.get_outputFolder()):
-                os.makedirs(self.sim_prop.get_outputFolder())
+    if self.sim_prop.saveToDisk
+        if !isdir(self.sim_prop.get_outputFolder())
+            mkpath(self.sim_prop.get_outputFolder())
+        end
 
-            prop = (self.solid_prop, self.fluid_prop, self.injection_prop, self.sim_prop)
-            with open(self.sim_prop.get_outputFolder() + "properties", 'wb') as output:
-                dill.dump(prop, output, -1)
+        prop = (self.solid_prop, self.fluid_prop, self.injection_prop, self.sim_prop)
+        jldsave(joinpath(self.sim_prop.get_outputFolder(), "properties.jld2"); prop)
+    end
 
-        if self.sim_prop.plotFigure or self.sim_prop.saveToDisk:
-            # save or plot fracture
-            self.output(self.fracture)
-            self.lastSavedTime = self.fracture.time
+    if self.sim_prop.plotFigure || self.sim_prop.saveToDisk
+        output(self, self.fracture)
+        self.lastSavedTime = self.fracture.time
+    end
 
-        if self.sim_prop.log2file:
-            self.sim_prop.set_logging_to_file(self.logAddress)
+    if self.sim_prop.log2file
+        set_logging_to_file(self.sim_prop, self.logAddress)
+    end
 
-        # deactivate the block_toepliz_compression functions
-        # DO THIS CHECK BEFORE COMPUTING C!
-        if self.C is not None: # in the case C is provided
-            self.sim_prop.useBlockToeplizCompression = False
-        elif self.solid_prop.TI_elasticity: # in case of TI_elasticity
-            self.sim_prop.useBlockToeplizCompression = False
-        elif not self.solid_prop.TI_elasticity and self.sim_prop.symmetric:  # in case you save 1/4 of the elasticity due to domain symmetry
-            self.sim_prop.useBlockToeplizCompression = False
+    if self.C !== nothing
+        self.sim_prop.useBlockToeplizCompression = false
+    elseif self.solid_prop.TI_elasticity
+        self.sim_prop.useBlockToeplizCompression = false
+    elseif !self.solid_prop.TI_elasticity && self.sim_prop.symmetric
+        self.sim_prop.useBlockToeplizCompression = false
+    end
 
-        # load elasticity matrix
-        if self.C is None:
-            log.info("Making elasticity matrix...")
-            if self.sim_prop.symmetric:
-                if not self.sim_prop.get_volumeControl():
-                    raise ValueError("Symmetric fracture is only supported for inviscid fluid yet!")
+    if self.C === nothing
+        # @info "Making elasticity matrix..."
+        println("Making elasticity matrix...")
+        if self.sim_prop.symmetric
+            if !self.sim_prop.get_volumeControl()
+                throw(ArgumentError("Symmetric fracture is only supported for inviscid fluid yet!"))
+            end
+        end
 
-            if not self.solid_prop.TI_elasticity:
-                if self.sim_prop.symmetric:
-                    self.C = load_isotropic_elasticity_matrix_symmetric(self.fracture.mesh,
-                                                                        self.solid_prop.Eprime)
-                else:
-                    if not self.sim_prop.useBlockToeplizCompression:
-                        self.C = load_isotropic_elasticity_matrix(self.fracture.mesh,
-                                                                  self.solid_prop.Eprime)
-                    else:
-                        self.C = load_isotropic_elasticity_matrix_toepliz(self.fracture.mesh,
-                                                                          self.solid_prop.Eprime)
-            else:
-                C = load_TI_elasticity_matrix(self.fracture.mesh,
-                                                   self.solid_prop,
-                                                   self.sim_prop)
-                # compressing the elasticity matrix for symmetric fracture
-                if self.sim_prop.symmetric:
-                    self.C = symmetric_elasticity_matrix_from_full(C, self.fracture.mesh)
-                else:
-                    self.C = C
-            log.info('Done!')
+        if !self.solid_prop.TI_elasticity
+            if self.sim_prop.symmetric
+                self.C = load_isotropic_elasticity_matrix_symmetric(self.fracture.mesh, self.solid_prop.Eprime)
+            else
+                if !self.sim_prop.useBlockToeplizCompression
+                    self.C = load_isotropic_elasticity_matrix(self.fracture.mesh, self.solid_prop.Eprime)
+                else
+                    self.C = load_isotropic_elasticity_matrix_toepliz(self.fracture.mesh, self.solid_prop.Eprime)
+                end
+            end
+        else
+            C = load_TI_elasticity_matrix(self.fracture.mesh, self.solid_prop, self.sim_prop)
+            if self.sim_prop.symmetric
+                self.C = symmetric_elasticity_matrix_from_full(C, self.fracture.mesh)
+            else
+                self.C = C
+            end
+        end
+        # @info "Done!"
+        println("Done!")
+    end
 
-        # # perform first time step with implicit front advancing due to non-availability of velocity
-        # if not self.sim_prop.symmetric:
-        #     if self.sim_prop.frontAdvancing == "predictor-corrector":
-        #         self.sim_prop.frontAdvancing = "implicit"
+    # # perform first time step with implicit front advancing due to non-availability of velocity
+    # if not self.sim_prop.symmetric:
+    #     if self.sim_prop.frontAdvancing == "predictor-corrector":
+    #         self.sim_prop.frontAdvancing = "implicit"
 
-        log.info("Starting time = " + repr(self.fracture.time))
-        # starting time stepping loop
-        while self.fracture.time < 0.999 * self.sim_prop.finalTime and self.TmStpCount < self.sim_prop.maxTimeSteps:
 
-            timeStep = self.get_time_step()
+    @info "Starting time = $(self.fracture.time)"
+    # starting time stepping loop
+    while self.fracture.time < 0.999 * self.sim_prop.finalTime && self.TmStpCount < self.sim_prop.maxTimeSteps
 
-            if self.sim_prop.collectPerfData:
-                tmStp_perf = IterationProperties(itr_type="time step")
-            else:
-                tmStp_perf = None
+        timeStep = get_time_step(self)
 
-            # advancing time step
-            status, Fr_n_pls1 = self.advance_time_step(self.fracture,
-                                                         self.C,
-                                                         timeStep,
-                                                         tmStp_perf)
+        tmStp_perf = nothing
+        if self.sim_prop.collectPerfData
+            tmStp_perf = Dict("itr_type" => "time step", "CpuTime_end" => 0.0, "status" => false, 
+                                "failure_cause" => "", "time" => 0.0, "NumbOfElts" => 0)
+        else
+            tmStp_perf = nothing
+        end
 
-            if self.sim_prop.collectPerfData:
-                tmStp_perf.CpuTime_end = time.time()
-                tmStp_perf.status = status == 1
-                tmStp_perf.failure_cause = self.errorMessages[status]
-                tmStp_perf.time = self.fracture.time
-                tmStp_perf.NumbOfElts = len(self.fracture.EltCrack)
-                self.perfData.append(tmStp_perf)
+        # advancing time step
+        # status, Fr_n_pls1 = self.advance_time_step(self.fracture, self.C, timeStep, tmStp_perf)
+        status, Fr_n_pls1 = advance_time_step(self, self.fracture, self.C, timeStep, tmStp_perf)
 
-            if status == 1:
+        if self.sim_prop.collectPerfData
+            tmStp_perf["CpuTime_end"] = time()
+            tmStp_perf["status"] = status == 1
+            tmStp_perf["failure_cause"] = get(self.errorMessages, status, "Unknown error")
+            tmStp_perf["time"] = self.fracture.time
+            tmStp_perf["NumbOfElts"] = length(self.fracture.EltCrack)
+            push!(self.perfData, tmStp_perf)
+        end
+
+        if status == 1
             # Successful time step
-                log.info("Time step successful!")
-                log.debug("Element in the crack: "+str(len(Fr_n_pls1.EltCrack)))
-                log.debug("Nx: " + str(Fr_n_pls1.mesh.nx))
-                log.debug("Ny: " + str(Fr_n_pls1.mesh.ny))
-                log.debug("hx: " + str(Fr_n_pls1.mesh.hx))
-                log.debug("hy: " + str(Fr_n_pls1.mesh.hy))
-                self.delta_w = Fr_n_pls1.w - self.fracture.w
-                self.lstTmStp = Fr_n_pls1.time - self.fracture.time
-                # output
-                if self.sim_prop.plotFigure or self.sim_prop.saveToDisk:
-                    if Fr_n_pls1.time > self.lastSavedTime:
-                        self.output(Fr_n_pls1)
+            @info "Time step successful!"
+            @debug "Element in the crack: $(length(Fr_n_pls1.EltCrack))"
+            @debug "Nx: $(Fr_n_pls1.mesh.nx)"
+            @debug "Ny: $(Fr_n_pls1.mesh.ny)"
+            @debug "hx: $(Fr_n_pls1.mesh.hx)"
+            @debug "hy: $(Fr_n_pls1.mesh.hy)"
+            
+            self.delta_w = Fr_n_pls1.w - self.fracture.w
+            self.lstTmStp = Fr_n_pls1.time - self.fracture.time
 
-                # add the advanced fracture to the last five fractures list
-                self.fracture = copy.deepcopy(Fr_n_pls1)
-                self.fr_queue[self.successfulTimeSteps % 5] = copy.deepcopy(Fr_n_pls1)
+            # output
+            if self.sim_prop.plotFigure || self.sim_prop.saveToDisk
+                if Fr_n_pls1.time > self.lastSavedTime
+                    output(self, Fr_n_pls1)
+                end
+            end
 
-                if self.fracture.time > self.lastSuccessfulTS:
-                    self.lastSuccessfulTS = self.fracture.time
-                if self.maxTmStp < self.lstTmStp:
-                    self.maxTmStp = self.lstTmStp
-                # put check point reattempts to zero if the simulation has advanced past the time where it failed
-                if Fr_n_pls1.time > self.lastSuccessfulTS + 2 * self.maxTmStp:
-                    self.chkPntReattmpts = 0
-                    # set the prefactor to the original value after four time steps (after the 5 time steps back jump)
-                    self.sim_prop.tmStpPrefactor = self.tmStpPrefactor_copy
-                self.successfulTimeSteps += 1
-                # set to 0 the counter of time step reductions
-                if self.TmStpReductions > 0:
-                    self.TmStpReductions = 0
-                    self.sim_prop.tmStpPrefactor = self.tmStpPrefactor_copy
-                # resetting the parameters for closure
-                if self.fullyClosed:
-                    # set to solve for pressure if the fracture was fully closed in last time step and is open now
-                    self.sim_prop.solveDeltaP = False
-                else:
-                    self.sim_prop.solveDeltaP = self.solveDetlaP_cp
-                self.PstvInjJmp = None
-                self.fullyClosed = False
+            # add the advanced fracture to the last five fractures list
+            self.fracture = deepcopy(Fr_n_pls1) # deepcopy из Base
+            idx_queue = (self.successfulTimeSteps % 5) + 1 # +1 для 1-based индексации в Julia
+            if idx_queue <= length(self.fr_queue)
+                self.fr_queue[idx_queue] = deepcopy(Fr_n_pls1)
+            else
+                push!(self.fr_queue, deepcopy(Fr_n_pls1))
+            end
 
-                # set front advancing back as set in simulation properties originally if velocity becomes available.
-                if np.max(Fr_n_pls1.v) > 0 or not np.isnan(Fr_n_pls1.v).any():
-                    self.sim_prop.frontAdvancing = copy.copy(self.frontAdvancing)
-                else:
-                    self.sim_prop.frontAdvancing = 'implicit'
+            if self.fracture.time > self.lastSuccessfulTS
+                self.lastSuccessfulTS = self.fracture.time
+            end
+            if self.maxTmStp < self.lstTmStp
+                self.maxTmStp = self.lstTmStp
+            end
+            # put check point reattempts to zero if the simulation has advanced past the time where it failed
+            if Fr_n_pls1.time > self.lastSuccessfulTS + 2 * self.maxTmStp
+                self.chkPntReattmpts = 0
+                self.sim_prop.tmStpPrefactor = self.tmStpPrefactor_copy
+            end
+            self.successfulTimeSteps += 1
+            if self.TmStpReductions > 0
+                self.TmStpReductions = 0
+                self.sim_prop.tmStpPrefactor = self.tmStpPrefactor_copy
+            end
+            # resetting the parameters for closure
+            if self.fullyClosed
+                self.sim_prop.solveDeltaP = false
+            else
+                self.sim_prop.solveDeltaP = self.solveDetlaP_cp
+            end
+            self.PstvInjJmp = nothing
+            self.fullyClosed = false
 
-                if self.TmStpCount == self.sim_prop.maxTimeSteps:
-                    log.warning("Max time steps reached!")
+            # set front advancing back as set in simulation properties originally if velocity becomes available.
+            # if np.max(Fr_n_pls1.v) > 0 or not np.isnan(Fr_n_pls1.v).any():
+            # max(Fr_n_pls1.v) > 0 || !any(isnan, Fr_n_pls1.v)
+            try
+                if maximum(Fr_n_pls1.v) > 0.0 || !any(isnan, Fr_n_pls1.v)
+                    self.sim_prop.frontAdvancing = self.frontAdvancing
+                else
+                    self.sim_prop.frontAdvancing = "implicit"
+                end
+            catch e
+                    # Обработка случая, если maximum не может обработать NaN
+                if isa(e, ArgumentError) && occursin("NaN", string(e))
+                    # Если maximum не может обработать NaN, проверяем вручную
+                    if !all(isnan, Fr_n_pls1.v) && maximum(filter(!isnan, Fr_n_pls1.v)) > 0.0
+                            self.sim_prop.frontAdvancing = self.frontAdvancing
+                    else
+                            self.sim_prop.frontAdvancing = "implicit"
+                    end
+                else
+                    rethrow(e)
+                end
+            end
 
-            elif status == 12 or status == 16:
-                # re-meshing required
-                if self.sim_prop.enableRemeshing:
-                    # the following update is required because Fr_n_pls1.EltTip contains the intersection between the cells at the boundary of the mesh and
-                    # the reconstructed front. For that reason in case of mesh extension
-                    if hasattr(Fr_n_pls1, 'EltTipBefore'):
-                        self.fracture.EltTipBefore = Fr_n_pls1.EltTipBefore
-                    # we need to decide which remeshings are to be considered
-                    compress = False
-                    if status == 16:
-                        # we reached cell number limit so we adapt by compressing the domain accordingly
+            if self.TmStpCount == self.sim_prop.maxTimeSteps
+                @warn "Max time steps reached!"
+            end
 
-                        # calculate the new number of cells
-                        new_elems = [int((self.fracture.mesh.nx + np.round(self.sim_prop.meshReductionFactor, 0))
-                                         / self.sim_prop.meshReductionFactor),
-                                     int((self.fracture.mesh.ny + np.round(self.sim_prop.meshReductionFactor, 0))
-                                         / self.sim_prop.meshReductionFactor)]
-                        if new_elems[0] % 2 == 0:
-                            new_elems[0] = new_elems[0] + 1
-                        if new_elems[1] % 2 == 0:
-                            new_elems[1] = new_elems[1] + 1
+        elif status == 12 or status == 16:
+            # re-meshing required
+            if self.sim_prop.enableRemeshing:
+                # the following update is required because Fr_n_pls1.EltTip contains the intersection between the cells at the boundary of the mesh and
+                # the reconstructed front. For that reason in case of mesh extension
+                if hasattr(Fr_n_pls1, 'EltTipBefore'):
+                    self.fracture.EltTipBefore = Fr_n_pls1.EltTipBefore
+                # we need to decide which remeshings are to be considered
+                compress = False
+                if status == 16:
+                    # we reached cell number limit so we adapt by compressing the domain accordingly
 
-                        # Decide if we still can reduce the number of elements
-                        if (2 * self.fracture.mesh.Lx / new_elems[0] > self.sim_prop.maxCellSize) or (2 *
-                            self.fracture.mesh.Ly / new_elems[1] > self.fracture.mesh.hy / self.fracture.mesh.hx *
-                            self.sim_prop.maxCellSize):
-                            log.warning("Reduction of cells not possible as minimal cell size would be violated!")
-                            self.sim_prop.meshReductionPossible = False
-                        else:
+                    # calculate the new number of cells
+                    new_elems = [int((self.fracture.mesh.nx + np.round(self.sim_prop.meshReductionFactor, 0))
+                                        / self.sim_prop.meshReductionFactor),
+                                    int((self.fracture.mesh.ny + np.round(self.sim_prop.meshReductionFactor, 0))
+                                        / self.sim_prop.meshReductionFactor)]
+                    if new_elems[0] % 2 == 0:
+                        new_elems[0] = new_elems[0] + 1
+                    if new_elems[1] % 2 == 0:
+                        new_elems[1] = new_elems[1] + 1
 
-                            log.info("Reducing cell number...")
+                    # Decide if we still can reduce the number of elements
+                    if (2 * self.fracture.mesh.Lx / new_elems[0] > self.sim_prop.maxCellSize) or (2 *
+                        self.fracture.mesh.Ly / new_elems[1] > self.fracture.mesh.hy / self.fracture.mesh.hx *
+                        self.sim_prop.maxCellSize):
+                        log.warning("Reduction of cells not possible as minimal cell size would be violated!")
+                        self.sim_prop.meshReductionPossible = False
+                    else:
 
-                            # We need to make sure the injection point stays where it is. We also do this for two points
-                            # on same x or y
-                            if len(self.fracture.source) == 1:
-                                index = self.fracture.source[0]
-                                cent_point = self.fracture.mesh.CenterCoor[self.fracture.source[0]]
-
-                                reduction_factor = self.sim_prop.meshReductionFactor
-                            elif len(self.fracture.source) == 2:
-                                index = self.fracture.source[0]
-                                cent_point = self.fracture.mesh.CenterCoor[self.fracture.source[0]]
-
-                                if self.fracture.mesh.CenterCoor[self.fracture.source[0]][0] == \
-                                        self.fracture.mesh.CenterCoor[self.fracture.source[1]][0]:
-                                    elems_inter = int(abs(self.fracture.mesh.CenterCoor[self.fracture.source[0]][1] -
-                                        self.fracture.mesh.CenterCoor[self.fracture.source[1]][1]) / \
-                                                  self.fracture.mesh.hy)
-                                    new_inter = int(np.ceil(elems_inter/self.sim_prop.meshReductionFactor))
-                                    reduction_factor = elems_inter / new_inter
-
-                                elif self.fracture.mesh.CenterCoor[self.fracture.source[0]][1] == \
-                                        self.fracture.mesh.CenterCoor[self.fracture.source[1]][1]:
-                                    elems_inter = int(abs(self.fracture.mesh.CenterCoor[self.fracture.source[0]][0] -
-                                        self.fracture.mesh.CenterCoor[self.fracture.source[1]][0]) / \
-                                                  self.fracture.mesh.hx)
-                                    new_inter = int(np.ceil(elems_inter / self.sim_prop.meshReductionFactor))
-                                    reduction_factor = elems_inter / new_inter
-
-                                else:
-                                    reduction_factor = self.sim_prop.meshReductionFactor
-
-                                log.info("The real reduction factor used is " + repr(reduction_factor))
-
-                            else:
-                                index = self.fracture.mesh.locate_element(0., 0.)[0]
-                                cent_point = np.asarray([0., 0.])
-
-                                reduction_factor = self.sim_prop.meshReductionFactor
-
-                            row = int(index/self.fracture.mesh.nx)
-                            column = index - self.fracture.mesh.nx * row
-
-                            row_frac = (self.fracture.mesh.ny - (row + 1))/row
-                            col_frac = column/(self.fracture.mesh.nx - (column + 1))
-
-                            # calculate the new number of cells
-                            new_elems = [int((self.fracture.mesh.nx + np.round(reduction_factor, 0))
-                                             / reduction_factor),
-                                         int((self.fracture.mesh.ny + np.round(reduction_factor, 0))
-                                             / reduction_factor)]
-                            if new_elems[0] % 2 == 0:
-                                new_elems[0] = new_elems[0] + 1
-                            if new_elems[1] % 2 == 0:
-                                new_elems[1] = new_elems[1] + 1
-
-
-                            # We calculate the new dimension of the meshed area
-                            new_limits = [[cent_point[0] - round((new_elems[0] - 1)/(1 / col_frac + 1)) *
-                                           self.fracture.mesh.hx * reduction_factor,
-                                           cent_point[0] + (new_elems[0] - round((new_elems[0] - 1)/(1 / col_frac + 1))
-                                                            - 1) * self.fracture.mesh.hx *
-                                           reduction_factor],
-                                          [cent_point[1] - round((new_elems[1] - 1) / (row_frac + 1)) *
-                                           self.fracture.mesh.hy * reduction_factor,
-                                           cent_point[1] + (new_elems[1] - round((new_elems[1] - 1) / (row_frac + 1))
-                                                            - 1) * self.fracture.mesh.hy *
-                                           reduction_factor]]
-
-                            elems = new_elems
-                            direction = 'reduce'
-                            self.remesh(new_limits, elems, direction)
-
-                            # set all other to zero
-                            side_bools = [False, False, False, False]
-
-                    elif status == 12:
-                        if self.sim_prop.meshExtensionAllDir:
-                            # we extend no matter how many boundaries we have hit
-                            # ensure all directions to extend are true
-                            self.sim_prop.set_mesh_extension_direction(['all'])
-
-                        front_indices = \
-                        np.intersect1d(self.fracture.mesh.Frontlist, Fr_n_pls1.EltTip, return_indices=True)[1]
-                        side_bools = [(front_indices <= Fr_n_pls1.mesh.nx - 3).any(),
-                                      (front_indices[front_indices > Fr_n_pls1.mesh.nx - 3]
-                                       <= 2 * (Fr_n_pls1.mesh.nx - 3) + 1).any(),
-                                      (front_indices[front_indices >= 2 * (Fr_n_pls1.mesh.nx - 2)] % 2 == 0).any(),
-                                      (front_indices[front_indices >= 2 * (Fr_n_pls1.mesh.nx - 2)] % 2 != 0).any()]
-                        # side_bools is a set of booleans telling us which sides are touched by the remeshing.
-                        # First boolean represents bottom, top, left, right
-
-                        if not self.sim_prop.meshExtensionAllDir:
-                            compress = \
-                                not np.asarray(np.asarray(self.sim_prop.meshExtension) * np.asarray(side_bools)).any() \
-                                or (len(np.asarray(side_bools)[np.asarray(side_bools) == True]) > 3)
-
-
-                    # This is the classical remeshing where the sides of the elements are multiplied by a constant.
-                    if compress:
-                        log.info("Remeshing by compressing the domain...")
+                        log.info("Reducing cell number...")
 
                         # We need to make sure the injection point stays where it is. We also do this for two points
                         # on same x or y
@@ -474,7 +470,7 @@ class Controller:
                             index = self.fracture.source[0]
                             cent_point = self.fracture.mesh.CenterCoor[self.fracture.source[0]]
 
-                            compression_factor = self.sim_prop.remeshFactor
+                            reduction_factor = self.sim_prop.meshReductionFactor
                         elif len(self.fracture.source) == 2:
                             index = self.fracture.source[0]
                             cent_point = self.fracture.mesh.CenterCoor[self.fracture.source[0]]
@@ -482,267 +478,367 @@ class Controller:
                             if self.fracture.mesh.CenterCoor[self.fracture.source[0]][0] == \
                                     self.fracture.mesh.CenterCoor[self.fracture.source[1]][0]:
                                 elems_inter = int(abs(self.fracture.mesh.CenterCoor[self.fracture.source[0]][1] -
-                                                      self.fracture.mesh.CenterCoor[self.fracture.source[1]][1]) / \
-                                                  self.fracture.mesh.hy)
-                                new_inter = int(np.ceil(elems_inter / self.sim_prop.remeshFactor))
-                                compression_factor = elems_inter / new_inter
+                                    self.fracture.mesh.CenterCoor[self.fracture.source[1]][1]) / \
+                                                self.fracture.mesh.hy)
+                                new_inter = int(np.ceil(elems_inter/self.sim_prop.meshReductionFactor))
+                                reduction_factor = elems_inter / new_inter
 
                             elif self.fracture.mesh.CenterCoor[self.fracture.source[0]][1] == \
                                     self.fracture.mesh.CenterCoor[self.fracture.source[1]][1]:
                                 elems_inter = int(abs(self.fracture.mesh.CenterCoor[self.fracture.source[0]][0] -
-                                                      self.fracture.mesh.CenterCoor[self.fracture.source[1]][0]) / \
-                                                  self.fracture.mesh.hx)
-                                new_inter = int(np.ceil(elems_inter / self.sim_prop.remeshFactor))
-                                compression_factor = elems_inter / new_inter
+                                    self.fracture.mesh.CenterCoor[self.fracture.source[1]][0]) / \
+                                                self.fracture.mesh.hx)
+                                new_inter = int(np.ceil(elems_inter / self.sim_prop.meshReductionFactor))
+                                reduction_factor = elems_inter / new_inter
 
                             else:
-                                compression_factor = self.sim_prop.remeshFactor
+                                reduction_factor = self.sim_prop.meshReductionFactor
 
-                            log.info("The real reduction factor used is " + repr(compression_factor))
+                            log.info("The real reduction factor used is " + repr(reduction_factor))
 
                         else:
                             index = self.fracture.mesh.locate_element(0., 0.)[0]
                             cent_point = np.asarray([0., 0.])
 
-                            compression_factor = self.sim_prop.remeshFactor
+                            reduction_factor = self.sim_prop.meshReductionFactor
 
-                        row = int(index / self.fracture.mesh.nx)
+                        row = int(index/self.fracture.mesh.nx)
                         column = index - self.fracture.mesh.nx * row
 
-                        row_frac = (self.fracture.mesh.ny - (row + 1)) / row
-                        col_frac = column / (self.fracture.mesh.nx - (column + 1))
+                        row_frac = (self.fracture.mesh.ny - (row + 1))/row
+                        col_frac = column/(self.fracture.mesh.nx - (column + 1))
+
+                        # calculate the new number of cells
+                        new_elems = [int((self.fracture.mesh.nx + np.round(reduction_factor, 0))
+                                            / reduction_factor),
+                                        int((self.fracture.mesh.ny + np.round(reduction_factor, 0))
+                                            / reduction_factor)]
+                        if new_elems[0] % 2 == 0:
+                            new_elems[0] = new_elems[0] + 1
+                        if new_elems[1] % 2 == 0:
+                            new_elems[1] = new_elems[1] + 1
+
 
                         # We calculate the new dimension of the meshed area
-                        new_limits = [[cent_point[0] - round((self.fracture.mesh.nx - 1) / (1 / col_frac + 1)) *
-                                       self.fracture.mesh.hx * compression_factor,
-                                       cent_point[0] + (self.fracture.mesh.nx - round((self.fracture.mesh.nx - 1) /
-                                                                                      (1 / col_frac + 1)) - 1) *
-                                       self.fracture.mesh.hx * compression_factor],
-                                      [cent_point[1] - round((self.fracture.mesh.ny - 1) / (row_frac + 1)) *
-                                       self.fracture.mesh.hy * compression_factor,
-                                       cent_point[1] + (self.fracture.mesh.ny - round((self.fracture.mesh.ny - 1) /
-                                                                                       (row_frac + 1)) - 1) *
-                                       self.fracture.mesh.hy * compression_factor]]
+                        new_limits = [[cent_point[0] - round((new_elems[0] - 1)/(1 / col_frac + 1)) *
+                                        self.fracture.mesh.hx * reduction_factor,
+                                        cent_point[0] + (new_elems[0] - round((new_elems[0] - 1)/(1 / col_frac + 1))
+                                                        - 1) * self.fracture.mesh.hx *
+                                        reduction_factor],
+                                        [cent_point[1] - round((new_elems[1] - 1) / (row_frac + 1)) *
+                                        self.fracture.mesh.hy * reduction_factor,
+                                        cent_point[1] + (new_elems[1] - round((new_elems[1] - 1) / (row_frac + 1))
+                                                        - 1) * self.fracture.mesh.hy *
+                                        reduction_factor]]
 
-                        # # We calculate the new dimension of the meshed area
-                        # new_dimensions = 2 * self.sim_prop.remeshFactor * np.asarray([self.fracture.mesh.Lx,
-                        #                                                           self.fracture.mesh.Ly])
-                        # new_limits = [[(self.fracture.mesh.domainLimits[2]+self.fracture.mesh.domainLimits[3]) / 2
-                        #                - new_dimensions[0]/2, (self.fracture.mesh.domainLimits[2] +
-                        #                                        self.fracture.mesh.domainLimits[3]) / 2
-                        #                + new_dimensions[0]/2],
-                        #               [(self.fracture.mesh.domainLimits[0]+self.fracture.mesh.domainLimits[1]) / 2
-                        #                - new_dimensions[1]/2, (self.fracture.mesh.domainLimits[0] +
-                        #                                        self.fracture.mesh.domainLimits[1]) / 2
-                        #                + new_dimensions[1]/2]]
+                        elems = new_elems
+                        direction = 'reduce'
+                        self.remesh(new_limits, elems, direction)
 
-                        elems = [self.fracture.mesh.nx, self.fracture.mesh.ny]
-
-                        if len(np.intersect1d(self.fracture.mesh.CenterElts, index)) == 0:
-                            compression_factor = 10
-
-                        self.remesh(new_limits, elems, rem_factor=compression_factor)
-
+                        # set all other to zero
                         side_bools = [False, False, False, False]
 
-                    else:
-                        nx_init = self.fracture.mesh.nx
-                        ny_init = self.fracture.mesh.ny
-                        for side in range(4):
-                            if np.asarray(np.asarray(self.sim_prop.meshExtension) * np.asarray(side_bools))[side]:
-                                if side == 0:
+                elif status == 12:
+                    if self.sim_prop.meshExtensionAllDir:
+                        # we extend no matter how many boundaries we have hit
+                        # ensure all directions to extend are true
+                        self.sim_prop.set_mesh_extension_direction(['all'])
 
-                                    elems_add = int(ny_init * (self.sim_prop.meshExtensionFactor[side] - 1))
-                                    if elems_add % 2 != 0:
-                                        elems_add = elems_add + 1
+                    front_indices = \
+                    np.intersect1d(self.fracture.mesh.Frontlist, Fr_n_pls1.EltTip, return_indices=True)[1]
+                    side_bools = [(front_indices <= Fr_n_pls1.mesh.nx - 3).any(),
+                                    (front_indices[front_indices > Fr_n_pls1.mesh.nx - 3]
+                                    <= 2 * (Fr_n_pls1.mesh.nx - 3) + 1).any(),
+                                    (front_indices[front_indices >= 2 * (Fr_n_pls1.mesh.nx - 2)] % 2 == 0).any(),
+                                    (front_indices[front_indices >= 2 * (Fr_n_pls1.mesh.nx - 2)] % 2 != 0).any()]
+                    # side_bools is a set of booleans telling us which sides are touched by the remeshing.
+                    # First boolean represents bottom, top, left, right
 
-                                    if not self.sim_prop.symmetric:
-                                        log.info("Remeshing by extending towards negative y...")
-                                        new_limits = [[self.fracture.mesh.domainLimits[2],
-                                                       self.fracture.mesh.domainLimits[3]],
-                                                      [self.fracture.mesh.domainLimits[0] -
-                                                       elems_add * self.fracture.mesh.hy,
-                                                       self.fracture.mesh.domainLimits[1]]]
-                                    else:
-                                        log.info("Remeshing by extending in vertical direction to keep symmetry...")
-                                        new_limits = [[self.fracture.mesh.domainLimits[2],
-                                                       self.fracture.mesh.domainLimits[3]],
-                                                      [self.fracture.mesh.domainLimits[0] -
-                                                       elems_add * self.fracture.mesh.hy/2,
-                                                       self.fracture.mesh.domainLimits[1] +
-                                                       elems_add * self.fracture.mesh.hy/2]]
-                                        side_bools[1] = False
-
-                                    direction = 'bottom'
-
-                                    elems = [self.fracture.mesh.nx, self.fracture.mesh.ny + elems_add]
+                    if not self.sim_prop.meshExtensionAllDir:
+                        compress = \
+                            not np.asarray(np.asarray(self.sim_prop.meshExtension) * np.asarray(side_bools)).any() \
+                            or (len(np.asarray(side_bools)[np.asarray(side_bools) == True]) > 3)
 
 
-                                if side == 1:
+                # This is the classical remeshing where the sides of the elements are multiplied by a constant.
+                if compress:
+                    log.info("Remeshing by compressing the domain...")
 
-                                    elems_add = int(ny_init * (self.sim_prop.meshExtensionFactor[side] - 1))
-                                    if elems_add % 2 != 0:
-                                        elems_add = elems_add + 1
+                    # We need to make sure the injection point stays where it is. We also do this for two points
+                    # on same x or y
+                    if len(self.fracture.source) == 1:
+                        index = self.fracture.source[0]
+                        cent_point = self.fracture.mesh.CenterCoor[self.fracture.source[0]]
 
-                                    if not self.sim_prop.symmetric:
-                                        log.info("Remeshing by extending towards positive y...")
-                                        new_limits = [[self.fracture.mesh.domainLimits[2],
-                                                       self.fracture.mesh.domainLimits[3]],
-                                                      [self.fracture.mesh.domainLimits[0],
-                                                       self.fracture.mesh.domainLimits[1] +
-                                                       elems_add * self.fracture.mesh.hy]]
-                                    else:
-                                        log.info("Remeshing by extending in vertical direction to keep symmetry...")
-                                        new_limits = [[self.fracture.mesh.domainLimits[2],
-                                                       self.fracture.mesh.domainLimits[3]],
-                                                      [self.fracture.mesh.domainLimits[0] -
-                                                       elems_add * self.fracture.mesh.hy/2,
-                                                       self.fracture.mesh.domainLimits[1] +
-                                                       elems_add * self.fracture.mesh.hy/2]]
-                                        side_bools[0] = False
+                        compression_factor = self.sim_prop.remeshFactor
+                    elif len(self.fracture.source) == 2:
+                        index = self.fracture.source[0]
+                        cent_point = self.fracture.mesh.CenterCoor[self.fracture.source[0]]
 
-                                    direction = 'top'
+                        if self.fracture.mesh.CenterCoor[self.fracture.source[0]][0] == \
+                                self.fracture.mesh.CenterCoor[self.fracture.source[1]][0]:
+                            elems_inter = int(abs(self.fracture.mesh.CenterCoor[self.fracture.source[0]][1] -
+                                                    self.fracture.mesh.CenterCoor[self.fracture.source[1]][1]) / \
+                                                self.fracture.mesh.hy)
+                            new_inter = int(np.ceil(elems_inter / self.sim_prop.remeshFactor))
+                            compression_factor = elems_inter / new_inter
 
-                                    elems = [self.fracture.mesh.nx, self.fracture.mesh.ny + elems_add]
-
-                                if side == 2:
-
-                                    elems_add = int(nx_init * (self.sim_prop.meshExtensionFactor[side] - 1))
-                                    if elems_add % 2 != 0:
-                                        elems_add = elems_add + 1
-
-                                    if not self.sim_prop.symmetric:
-                                        log.info("Remeshing by extending towards negative x...")
-                                        new_limits = [
-                                            [self.fracture.mesh.domainLimits[2] - elems_add * self.fracture.mesh.hx,
-                                             self.fracture.mesh.domainLimits[3]],
-                                            [self.fracture.mesh.domainLimits[0],
-                                             self.fracture.mesh.domainLimits[1]]]
-                                    else:
-                                        log.info("Remeshing by extending in horizontal direction to keep symmetry...")
-                                        new_limits = [
-                                            [self.fracture.mesh.domainLimits[2] - elems_add * self.fracture.mesh.hx/2,
-                                             self.fracture.mesh.domainLimits[3] + elems_add * self.fracture.mesh.hx/2],
-                                            [self.fracture.mesh.domainLimits[0],
-                                             self.fracture.mesh.domainLimits[1]]]
-                                        side_bools[3] = False
-
-                                    direction = 'left'
-
-                                    elems = [self.fracture.mesh.nx + elems_add, self.fracture.mesh.ny]
-
-                                if side == 3:
-
-                                    elems_add = int(nx_init * (self.sim_prop.meshExtensionFactor[side] - 1))
-                                    if elems_add % 2 != 0:
-                                        elems_add = elems_add + 1
-
-                                    if not self.sim_prop.symmetric:
-                                        log.info("Remeshing by extending towards positive x...")
-                                        new_limits = [[self.fracture.mesh.domainLimits[2],
-                                                       self.fracture.mesh.domainLimits[
-                                                           3] + elems_add * self.fracture.mesh.hx],
-                                                      [self.fracture.mesh.domainLimits[0],
-                                                       self.fracture.mesh.domainLimits[1]]]
-                                    else:
-                                        log.info("Remeshing by extending in horizontal direction to keep symmetry...")
-                                        new_limits = [
-                                            [self.fracture.mesh.domainLimits[2] - elems_add * self.fracture.mesh.hx/2,
-                                             self.fracture.mesh.domainLimits[3] + elems_add * self.fracture.mesh.hx/2],
-                                            [self.fracture.mesh.domainLimits[0],
-                                             self.fracture.mesh.domainLimits[1]]]
-                                        side_bools[2] = False
-
-                                    direction = 'right'
-
-                                    elems = [self.fracture.mesh.nx + elems_add, self.fracture.mesh.ny]
-
-                                self.remesh(new_limits, elems, direction=direction)
-                                side_bools[side] = False
-
-                    if np.asarray(side_bools).any():
-                        log.info("Remeshing by compressing the domain...")
-
-                        # We need to make sure the injection point stays where it is. We also do this for two points
-                        # on same x or y
-                        if len(self.fracture.source) == 1:
-                            index = self.fracture.source[0]
-                            cent_point = self.fracture.mesh.CenterCoor[self.fracture.source[0]]
-
-                            compression_factor = self.sim_prop.remeshFactor
-                        elif len(self.fracture.source) == 2:
-                            index = self.fracture.source[0]
-                            cent_point = self.fracture.mesh.CenterCoor[self.fracture.source[0]]
-
-                            if self.fracture.mesh.CenterCoor[self.fracture.source[0]][0] == \
-                                    self.fracture.mesh.CenterCoor[self.fracture.source[1]][0]:
-                                elems_inter = int(abs(self.fracture.mesh.CenterCoor[self.fracture.source[0]][1] -
-                                                      self.fracture.mesh.CenterCoor[self.fracture.source[1]][1]) / \
-                                                  self.fracture.mesh.hy)
-                                new_inter = int(np.ceil(elems_inter / self.sim_prop.remeshFactor))
-                                compression_factor = elems_inter / new_inter
-
-                            elif self.fracture.mesh.CenterCoor[self.fracture.source[0]][1] == \
-                                    self.fracture.mesh.CenterCoor[self.fracture.source[1]][1]:
-                                elems_inter = int(abs(self.fracture.mesh.CenterCoor[self.fracture.source[0]][0] -
-                                                      self.fracture.mesh.CenterCoor[self.fracture.source[1]][0]) / \
-                                                  self.fracture.mesh.hx)
-                                new_inter = int(np.ceil(elems_inter / self.sim_prop.remeshFactor))
-                                compression_factor = elems_inter / new_inter
-
-                            else:
-                                compression_factor = self.sim_prop.remeshFactor
-
-                            log.info("The real reduction factor used is " + repr(compression_factor))
+                        elif self.fracture.mesh.CenterCoor[self.fracture.source[0]][1] == \
+                                self.fracture.mesh.CenterCoor[self.fracture.source[1]][1]:
+                            elems_inter = int(abs(self.fracture.mesh.CenterCoor[self.fracture.source[0]][0] -
+                                                    self.fracture.mesh.CenterCoor[self.fracture.source[1]][0]) / \
+                                                self.fracture.mesh.hx)
+                            new_inter = int(np.ceil(elems_inter / self.sim_prop.remeshFactor))
+                            compression_factor = elems_inter / new_inter
 
                         else:
-                            index = self.fracture.mesh.locate_element(0., 0.)
-                            cent_point = np.asarray([0., 0.])
-
                             compression_factor = self.sim_prop.remeshFactor
 
-                        row = int(index / self.fracture.mesh.nx)
-                        column = index - self.fracture.mesh.nx * row
+                        log.info("The real reduction factor used is " + repr(compression_factor))
 
-                        row_frac = (self.fracture.mesh.ny - (row + 1)) / row
-                        col_frac = column / (self.fracture.mesh.nx - (column + 1))
+                    else:
+                        index = self.fracture.mesh.locate_element(0., 0.)[0]
+                        cent_point = np.asarray([0., 0.])
 
-                        # We calculate the new dimension of the meshed area
-                        new_limits = [[cent_point[0] - round((self.fracture.mesh.nx - 1) / (1 / col_frac + 1)) *
-                                       self.fracture.mesh.hx * compression_factor,
-                                       cent_point[0] + (self.fracture.mesh.nx - round((self.fracture.mesh.nx - 1) /
-                                                                                      (1 / col_frac + 1)) - 1) *
-                                       self.fracture.mesh.hx * compression_factor],
-                                      [cent_point[1] - round((self.fracture.mesh.ny - 1) / (row_frac + 1)) *
-                                       self.fracture.mesh.hy * compression_factor,
-                                       cent_point[1] + (self.fracture.mesh.ny - round((self.fracture.mesh.ny - 1) /
-                                                                                      (row_frac + 1)) - 1) *
-                                       self.fracture.mesh.hy * compression_factor]]
+                        compression_factor = self.sim_prop.remeshFactor
 
-                        # # We calculate the new dimension of the meshed area
-                        # new_dimensions = 2 * self.sim_prop.remeshFactor * np.asarray([self.fracture.mesh.Lx,
-                        #                                                           self.fracture.mesh.Ly])
-                        # new_limits = [[(self.fracture.mesh.domainLimits[2]+self.fracture.mesh.domainLimits[3]) / 2
-                        #                - new_dimensions[0]/2, (self.fracture.mesh.domainLimits[2] +
-                        #                                        self.fracture.mesh.domainLimits[3]) / 2
-                        #                + new_dimensions[0]/2],
-                        #               [(self.fracture.mesh.domainLimits[0]+self.fracture.mesh.domainLimits[1]) / 2
-                        #                - new_dimensions[1]/2, (self.fracture.mesh.domainLimits[0] +
-                        #                                        self.fracture.mesh.domainLimits[1]) / 2
-                        #                + new_dimensions[1]/2]]
+                    row = int(index / self.fracture.mesh.nx)
+                    column = index - self.fracture.mesh.nx * row
 
-                        elems = [self.fracture.mesh.nx, self.fracture.mesh.ny]
+                    row_frac = (self.fracture.mesh.ny - (row + 1)) / row
+                    col_frac = column / (self.fracture.mesh.nx - (column + 1))
 
-                        if len(np.intersect1d(self.fracture.mesh.CenterElts, index)) == 0:
-                            compression_factor = 10
+                    # We calculate the new dimension of the meshed area
+                    new_limits = [[cent_point[0] - round((self.fracture.mesh.nx - 1) / (1 / col_frac + 1)) *
+                                    self.fracture.mesh.hx * compression_factor,
+                                    cent_point[0] + (self.fracture.mesh.nx - round((self.fracture.mesh.nx - 1) /
+                                                                                    (1 / col_frac + 1)) - 1) *
+                                    self.fracture.mesh.hx * compression_factor],
+                                    [cent_point[1] - round((self.fracture.mesh.ny - 1) / (row_frac + 1)) *
+                                    self.fracture.mesh.hy * compression_factor,
+                                    cent_point[1] + (self.fracture.mesh.ny - round((self.fracture.mesh.ny - 1) /
+                                                                                    (row_frac + 1)) - 1) *
+                                    self.fracture.mesh.hy * compression_factor]]
 
-                        self.remesh(new_limits, elems, rem_factor=compression_factor)
+                    # # We calculate the new dimension of the meshed area
+                    # new_dimensions = 2 * self.sim_prop.remeshFactor * np.asarray([self.fracture.mesh.Lx,
+                    #                                                           self.fracture.mesh.Ly])
+                    # new_limits = [[(self.fracture.mesh.domainLimits[2]+self.fracture.mesh.domainLimits[3]) / 2
+                    #                - new_dimensions[0]/2, (self.fracture.mesh.domainLimits[2] +
+                    #                                        self.fracture.mesh.domainLimits[3]) / 2
+                    #                + new_dimensions[0]/2],
+                    #               [(self.fracture.mesh.domainLimits[0]+self.fracture.mesh.domainLimits[1]) / 2
+                    #                - new_dimensions[1]/2, (self.fracture.mesh.domainLimits[0] +
+                    #                                        self.fracture.mesh.domainLimits[1]) / 2
+                    #                + new_dimensions[1]/2]]
 
-                    log_only_to_logfile.info("\nRemeshed at " + repr(self.fracture.time))
+                    elems = [self.fracture.mesh.nx, self.fracture.mesh.ny]
+
+                    if len(np.intersect1d(self.fracture.mesh.CenterElts, index)) == 0:
+                        compression_factor = 10
+
+                    self.remesh(new_limits, elems, rem_factor=compression_factor)
+
+                    side_bools = [False, False, False, False]
 
                 else:
-                    log.info("Reached end of the domain. Exiting...")
-                    break
+                    nx_init = self.fracture.mesh.nx
+                    ny_init = self.fracture.mesh.ny
+                    for side in range(4):
+                        if np.asarray(np.asarray(self.sim_prop.meshExtension) * np.asarray(side_bools))[side]:
+                            if side == 0:
+
+                                elems_add = int(ny_init * (self.sim_prop.meshExtensionFactor[side] - 1))
+                                if elems_add % 2 != 0:
+                                    elems_add = elems_add + 1
+
+                                if not self.sim_prop.symmetric:
+                                    log.info("Remeshing by extending towards negative y...")
+                                    new_limits = [[self.fracture.mesh.domainLimits[2],
+                                                    self.fracture.mesh.domainLimits[3]],
+                                                    [self.fracture.mesh.domainLimits[0] -
+                                                    elems_add * self.fracture.mesh.hy,
+                                                    self.fracture.mesh.domainLimits[1]]]
+                                else:
+                                    log.info("Remeshing by extending in vertical direction to keep symmetry...")
+                                    new_limits = [[self.fracture.mesh.domainLimits[2],
+                                                    self.fracture.mesh.domainLimits[3]],
+                                                    [self.fracture.mesh.domainLimits[0] -
+                                                    elems_add * self.fracture.mesh.hy/2,
+                                                    self.fracture.mesh.domainLimits[1] +
+                                                    elems_add * self.fracture.mesh.hy/2]]
+                                    side_bools[1] = False
+
+                                direction = 'bottom'
+
+                                elems = [self.fracture.mesh.nx, self.fracture.mesh.ny + elems_add]
+
+
+                            if side == 1:
+
+                                elems_add = int(ny_init * (self.sim_prop.meshExtensionFactor[side] - 1))
+                                if elems_add % 2 != 0:
+                                    elems_add = elems_add + 1
+
+                                if not self.sim_prop.symmetric:
+                                    log.info("Remeshing by extending towards positive y...")
+                                    new_limits = [[self.fracture.mesh.domainLimits[2],
+                                                    self.fracture.mesh.domainLimits[3]],
+                                                    [self.fracture.mesh.domainLimits[0],
+                                                    self.fracture.mesh.domainLimits[1] +
+                                                    elems_add * self.fracture.mesh.hy]]
+                                else:
+                                    log.info("Remeshing by extending in vertical direction to keep symmetry...")
+                                    new_limits = [[self.fracture.mesh.domainLimits[2],
+                                                    self.fracture.mesh.domainLimits[3]],
+                                                    [self.fracture.mesh.domainLimits[0] -
+                                                    elems_add * self.fracture.mesh.hy/2,
+                                                    self.fracture.mesh.domainLimits[1] +
+                                                    elems_add * self.fracture.mesh.hy/2]]
+                                    side_bools[0] = False
+
+                                direction = 'top'
+
+                                elems = [self.fracture.mesh.nx, self.fracture.mesh.ny + elems_add]
+
+                            if side == 2:
+
+                                elems_add = int(nx_init * (self.sim_prop.meshExtensionFactor[side] - 1))
+                                if elems_add % 2 != 0:
+                                    elems_add = elems_add + 1
+
+                                if not self.sim_prop.symmetric:
+                                    log.info("Remeshing by extending towards negative x...")
+                                    new_limits = [
+                                        [self.fracture.mesh.domainLimits[2] - elems_add * self.fracture.mesh.hx,
+                                            self.fracture.mesh.domainLimits[3]],
+                                        [self.fracture.mesh.domainLimits[0],
+                                            self.fracture.mesh.domainLimits[1]]]
+                                else:
+                                    log.info("Remeshing by extending in horizontal direction to keep symmetry...")
+                                    new_limits = [
+                                        [self.fracture.mesh.domainLimits[2] - elems_add * self.fracture.mesh.hx/2,
+                                            self.fracture.mesh.domainLimits[3] + elems_add * self.fracture.mesh.hx/2],
+                                        [self.fracture.mesh.domainLimits[0],
+                                            self.fracture.mesh.domainLimits[1]]]
+                                    side_bools[3] = False
+
+                                direction = 'left'
+
+                                elems = [self.fracture.mesh.nx + elems_add, self.fracture.mesh.ny]
+
+                            if side == 3:
+
+                                elems_add = int(nx_init * (self.sim_prop.meshExtensionFactor[side] - 1))
+                                if elems_add % 2 != 0:
+                                    elems_add = elems_add + 1
+
+                                if not self.sim_prop.symmetric:
+                                    log.info("Remeshing by extending towards positive x...")
+                                    new_limits = [[self.fracture.mesh.domainLimits[2],
+                                                    self.fracture.mesh.domainLimits[
+                                                        3] + elems_add * self.fracture.mesh.hx],
+                                                    [self.fracture.mesh.domainLimits[0],
+                                                    self.fracture.mesh.domainLimits[1]]]
+                                else:
+                                    log.info("Remeshing by extending in horizontal direction to keep symmetry...")
+                                    new_limits = [
+                                        [self.fracture.mesh.domainLimits[2] - elems_add * self.fracture.mesh.hx/2,
+                                            self.fracture.mesh.domainLimits[3] + elems_add * self.fracture.mesh.hx/2],
+                                        [self.fracture.mesh.domainLimits[0],
+                                            self.fracture.mesh.domainLimits[1]]]
+                                    side_bools[2] = False
+
+                                direction = 'right'
+
+                                elems = [self.fracture.mesh.nx + elems_add, self.fracture.mesh.ny]
+
+                            self.remesh(new_limits, elems, direction=direction)
+                            side_bools[side] = False
+
+                if np.asarray(side_bools).any():
+                    log.info("Remeshing by compressing the domain...")
+
+                    # We need to make sure the injection point stays where it is. We also do this for two points
+                    # on same x or y
+                    if len(self.fracture.source) == 1:
+                        index = self.fracture.source[0]
+                        cent_point = self.fracture.mesh.CenterCoor[self.fracture.source[0]]
+
+                        compression_factor = self.sim_prop.remeshFactor
+                    elif len(self.fracture.source) == 2:
+                        index = self.fracture.source[0]
+                        cent_point = self.fracture.mesh.CenterCoor[self.fracture.source[0]]
+
+                        if self.fracture.mesh.CenterCoor[self.fracture.source[0]][0] == \
+                                self.fracture.mesh.CenterCoor[self.fracture.source[1]][0]:
+                            elems_inter = int(abs(self.fracture.mesh.CenterCoor[self.fracture.source[0]][1] -
+                                                    self.fracture.mesh.CenterCoor[self.fracture.source[1]][1]) / \
+                                                self.fracture.mesh.hy)
+                            new_inter = int(np.ceil(elems_inter / self.sim_prop.remeshFactor))
+                            compression_factor = elems_inter / new_inter
+
+                        elif self.fracture.mesh.CenterCoor[self.fracture.source[0]][1] == \
+                                self.fracture.mesh.CenterCoor[self.fracture.source[1]][1]:
+                            elems_inter = int(abs(self.fracture.mesh.CenterCoor[self.fracture.source[0]][0] -
+                                                    self.fracture.mesh.CenterCoor[self.fracture.source[1]][0]) / \
+                                                self.fracture.mesh.hx)
+                            new_inter = int(np.ceil(elems_inter / self.sim_prop.remeshFactor))
+                            compression_factor = elems_inter / new_inter
+
+                        else:
+                            compression_factor = self.sim_prop.remeshFactor
+
+                        log.info("The real reduction factor used is " + repr(compression_factor))
+
+                    else:
+                        index = self.fracture.mesh.locate_element(0., 0.)
+                        cent_point = np.asarray([0., 0.])
+
+                        compression_factor = self.sim_prop.remeshFactor
+
+                    row = int(index / self.fracture.mesh.nx)
+                    column = index - self.fracture.mesh.nx * row
+
+                    row_frac = (self.fracture.mesh.ny - (row + 1)) / row
+                    col_frac = column / (self.fracture.mesh.nx - (column + 1))
+
+                    # We calculate the new dimension of the meshed area
+                    new_limits = [[cent_point[0] - round((self.fracture.mesh.nx - 1) / (1 / col_frac + 1)) *
+                                    self.fracture.mesh.hx * compression_factor,
+                                    cent_point[0] + (self.fracture.mesh.nx - round((self.fracture.mesh.nx - 1) /
+                                                                                    (1 / col_frac + 1)) - 1) *
+                                    self.fracture.mesh.hx * compression_factor],
+                                    [cent_point[1] - round((self.fracture.mesh.ny - 1) / (row_frac + 1)) *
+                                    self.fracture.mesh.hy * compression_factor,
+                                    cent_point[1] + (self.fracture.mesh.ny - round((self.fracture.mesh.ny - 1) /
+                                                                                    (row_frac + 1)) - 1) *
+                                    self.fracture.mesh.hy * compression_factor]]
+
+                    # # We calculate the new dimension of the meshed area
+                    # new_dimensions = 2 * self.sim_prop.remeshFactor * np.asarray([self.fracture.mesh.Lx,
+                    #                                                           self.fracture.mesh.Ly])
+                    # new_limits = [[(self.fracture.mesh.domainLimits[2]+self.fracture.mesh.domainLimits[3]) / 2
+                    #                - new_dimensions[0]/2, (self.fracture.mesh.domainLimits[2] +
+                    #                                        self.fracture.mesh.domainLimits[3]) / 2
+                    #                + new_dimensions[0]/2],
+                    #               [(self.fracture.mesh.domainLimits[0]+self.fracture.mesh.domainLimits[1]) / 2
+                    #                - new_dimensions[1]/2, (self.fracture.mesh.domainLimits[0] +
+                    #                                        self.fracture.mesh.domainLimits[1]) / 2
+                    #                + new_dimensions[1]/2]]
+
+                    elems = [self.fracture.mesh.nx, self.fracture.mesh.ny]
+
+                    if len(np.intersect1d(self.fracture.mesh.CenterElts, index)) == 0:
+                        compression_factor = 10
+
+                    self.remesh(new_limits, elems, rem_factor=compression_factor)
+
+                log_only_to_logfile.info("\nRemeshed at " + repr(self.fracture.time))
+
+            else:
+                log.info("Reached end of the domain. Exiting...")
+                break
 
             elif status == 14:
                 # fracture fully closed
