@@ -6,7 +6,7 @@ This file defines the default simulation parameters for PyFrac.jl.
 
 """
 
-module default_parameters
+module DefaultParameters
 
     export toleranceFractureFront, toleranceEHL, tol_projection, toleranceVStagnant,
            Hersh_Bulk_epsilon, Hersh_Bulk_Gmin, max_front_itrs, max_solver_itrs,
