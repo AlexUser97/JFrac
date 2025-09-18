@@ -9,6 +9,7 @@ module HFReferenceSolutions
 
     include("anisotropy.jl")
     using .Anisotropy: TI_plain_strain_modulus
+    
     using SpecialFunctions
     using Interpolations
     using PyPlot

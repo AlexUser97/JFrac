@@ -24,9 +24,8 @@ module Fracture
     using .Properties: PlotProperties
 
     using PyPlot
-    using MathConstants
     using JLD2
-    using Interpolation
+    using Interpolations
 
     export Fracture, plot_fracture, process_fracture_front, plot_fracture_slice, SaveFracture, 
         plot_front, plot_front_3D, update_value, update_index, update_front_dict, update_regime_color, remesh, update_tip_regime
