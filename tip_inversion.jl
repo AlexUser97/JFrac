@@ -3,10 +3,6 @@
 This file is part of JFrac.
 Realization of Pyfrac tip_inversion module on Julia language.
 
-Converted from PyFrac/tip_inversion.py
-Created by Haseeb Zia on Tue Nov 01 15:22:00 2016.
-Copyright (c) "ECOLE POLYTECHNIQUE FEDERALE DE LAUSANNE, Switzerland, Geo-Energy Laboratory", 2016-2021.
-All rights reserved. See the LICENSE.TXT file for more details.
 """
 
 module TipInversion

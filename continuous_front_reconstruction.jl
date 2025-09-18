@@ -16,7 +16,15 @@ module ContinuousFrontReconstruction
     using Statistics
     using DataStructures
 
-    export itertools_chain_from_iterable, append_to_typelists, distance, copute_area_of_a_polygon, pointtolinedistance, is_inside_the_triangle, recompute_LS_at_tip_cells, findangle, elements, findcommon, filltable, ISinsideFracture, get_fictitius_cell_type, get_fictitius_cell_specific_names, get_fictitius_cell_names, get_fictitius_cell_all_names, get_LS_on_i_fictitius_cell, find_fictitius_cells, split_central_from_noncentral_intersections, define_orientation_type1, define_orientation_type2, define_orientation_type3OR4, move_intersections_to_the_center_when_inRibbon_type3, move_intersections_to_the_center_when_inRibbon_type1, move_intersections_to_the_center_when_inRibbon_type4, split_type4SubType4_from_rest, get_mesh_info_for_computing_intersections, find_x_OR_y_intersections, find_edge_ID, find_xy_intersections_type3_case_2_intersections, check_if_point_inside_cell, reorder_intersections, find_xy_intersections_type3_case_0_1_2_intersections, find_xy_intersections_type1, find_xy_intersections_with_cell_center, process_fictitius_cells_3, process_fictitius_cells_1, process_fictitius_cells_2, process_fictitius_cells_4, get_next_cell_name, get_next_cell_name_from_first, UpdateListsFromContinuousFrontRec, you_advance_more_than_2_cells, plotgrid, plot_final_reconstruction, plot_xy_points, plot_two_fronts, plot_cells
+    export itertools_chain_from_iterable, append_to_typelists, distance, copute_area_of_a_polygon, pointtolinedistance, is_inside_the_triangle,
+    recompute_LS_at_tip_cells, findangle, elements, findcommon, filltable, ISinsideFracture, get_fictitius_cell_type, get_fictitius_cell_specific_names,
+    get_fictitius_cell_names, get_fictitius_cell_all_names, get_LS_on_i_fictitius_cell, find_fictitius_cells, split_central_from_noncentral_intersections,
+    define_orientation_type1, define_orientation_type2, define_orientation_type3OR4, move_intersections_to_the_center_when_inRibbon_type3,
+    move_intersections_to_the_center_when_inRibbon_type1, move_intersections_to_the_center_when_inRibbon_type4, split_type4SubType4_from_rest,
+    get_mesh_info_for_computing_intersections, find_x_OR_y_intersections, find_edge_ID, find_xy_intersections_type3_case_2_intersections, check_if_point_inside_cell,
+    reorder_intersections, find_xy_intersections_type3_case_0_1_2_intersections, find_xy_intersections_type1, find_xy_intersections_with_cell_center,
+    process_fictitius_cells_3, process_fictitius_cells_1, process_fictitius_cells_2, process_fictitius_cells_4, get_next_cell_name, get_next_cell_name_from_first,
+    UpdateListsFromContinuousFrontRec, you_advance_more_than_2_cells, plotgrid, plot_final_reconstruction, plot_xy_points, plot_two_fronts, plot_cells
 
 
     """
@@ -31,6 +39,7 @@ module ContinuousFrontReconstruction
         # Returns
         - nothing - it only plots the mesh grid
     """
+
     function plotgrid(mesh::CartesianMesh, ax::PyPlot.PyObject)
         # set the four corners of the rectangular mesh
         ax.set_xlim([-mesh.Lx - mesh.hx / 2, mesh.Lx + mesh.hx / 2])
@@ -87,6 +96,7 @@ module ContinuousFrontReconstruction
         # Returns
         - `PyPlot.Figure`: the figure object
     """
+    
     function plot_cell_lists(mesh::CartesianMesh, list::Vector{Int}; 
                             fig::Union{PyPlot.Figure, Nothing}=nothing, 
                             mycolor::String="g", mymarker::String="_", 
@@ -136,6 +146,7 @@ module ContinuousFrontReconstruction
         # Returns
         - nothing - it only plots the mesh grid
     """
+    
     function plot_ray_tracing_numpy_results(mesh::CartesianMesh, 
                                         x::Vector{Float64}, 
                                         y::Vector{Float64}, 

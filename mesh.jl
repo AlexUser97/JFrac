@@ -1,10 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-This file is part of PyFrac.
+This file is part of JFrac.
+Realization of Pyfrac on Julia language.
 
-Created by Haseeb Zia on Thu Dec 22 11:51:00 2016.
-Copyright (c) ECOLE POLYTECHNIQUE FEDERALE DE LAUSANNE, Switzerland, Geo-Energy Laboratory, 2016-2020. All rights reserved.
-See the LICENSE.TXT file for more details.
 """
 
 module Mesh
@@ -13,11 +11,15 @@ module Mesh
     include("symmetry.jl")
 
     using .Visualization: zoom_factory, to_precision, text3d
-    using .Symmetry: *
+    using .Symmetry: 
 
     using Logging
     using PyPlot
     using Statistics
+
+    export CartesianMesh, locate_element, Neighbors, plot, plot_3D, plot_scale_3d, identify_elements,
+           make_3D_colorbar, process_material_prop_for_display, set_aspect_equal_3d
+
     """
         CartesianMesh
         A uniform Cartesian mesh centered at (0,0) with domain [-Lx, Lx] × [-Ly, Ly].
@@ -567,7 +569,6 @@ module Mesh
 
         end
     end
-
 
     # -----------------------------------------------------------------------------------------------------------------------
 

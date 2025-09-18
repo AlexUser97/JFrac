@@ -9,7 +9,7 @@ module Elasticity
     using LinearAlgebra
     using Logging
     using JSON
-    using Serialization
+    using JLD2
     using FilePathsBase: joinpath
     using Base.Filesystem: isfile
 
@@ -195,8 +195,8 @@ module Elasticity
         :return: submatrix of C
         """
         
-        elemX = elementsXY[2] # Julia uses 1-based indexing
-        elemY = elementsXY[1] # Julia uses 1-based indexing
+        elemX = elementsXY[2]
+        elemY = elementsXY[1]
         dimX = length(elemX)  # number of elements to consider on x axis
         dimY = length(elemY)  # number of elements to consider on y axis
 
@@ -217,7 +217,7 @@ module Elasticity
                 for iter1 in 1:dimY
                     i1 = iY[iter1]
                     j1 = jY[iter1]
-                    indices = abs.(j1 .- jX) + nx * abs.(i1 .- iX) .+ 1  # adjust for 1-based indexing
+                    indices = abs.(j1 .- jX) + nx * abs.(i1 .- iX) .+ 1
                     C_sub[iter1, :] = localC_toeplotz_coe[indices]
                 end
                 return C_sub
@@ -230,7 +230,7 @@ module Elasticity
                 for iter1 in 1:dimX
                     i1 = i[iter1]
                     j1 = j[iter1]
-                    indices = abs.(j .- j1) + nx * abs.(i .- i1) .+ 1  # adjust for 1-based indexing
+                    indices = abs.(j .- j1) + nx * abs.(i .- i1) .+ 1
                     C_sub[iter1, :] = localC_toeplotz_coe[indices]
                 end
                 return C_sub
@@ -382,39 +382,36 @@ module Elasticity
     function load_elasticity_matrix(Mesh::CartesianMesh, EPrime::Float64)
         log = Logging.current_logger()
         @info "Reading global elasticity matrix..." _group="JFrac.load_elasticity_matrix"
-        
+
+        filename = "CMatrix.jld2"
+
         try
-            file = open("CMatrix", "r")
-            (C, MeshLoaded, EPrimeLoaded) = deserialize(file)
-            close(file)
-            
+            C_loaded, MeshLoaded, EPrimeLoaded = jldopen(filename, "r") do file
+                read(file)
+            end
+
             if (Mesh.nx, Mesh.ny, Mesh.Lx, Mesh.Ly, EPrime) == (MeshLoaded.nx, MeshLoaded.ny, MeshLoaded.Lx, MeshLoaded.Ly, EPrimeLoaded)
-                return C
+                @info "Loaded matrix is compatible." _group="JFrac.load_elasticity_matrix"
+                return C_loaded
             else
                 @warn "The loaded matrix is not correct with respect to the current mesh or the current plain strain modulus.\nMaking global matrix..." _group="JFrac.load_elasticity_matrix"
                 C = load_isotropic_elasticity_matrix(Mesh, EPrime)
-                Elast = (C, Mesh, EPrime)
-                
-                file = open("CMatrix", "w")
-                serialize(file, Elast)
-                close(file)
-                
+
+                jldsave(filename; C=C, Mesh=Mesh, EPrime=EPrime)
+
                 @info "Done!" _group="JFrac.load_elasticity_matrix"
                 return C
             end
         catch e
-            if isa(e, SystemError) && !isfile("CMatrix")
-                @error "file not found\nBuilding the global elasticity matrix..." _group="JFrac.load_elasticity_matrix"
+            if (isa(e, SystemError) || isa(e, ErrorException)) && !isfile(filename)
+                @error "File $filename not found\nBuilding the global elasticity matrix..." exception=(e, catch_backtrace()) _group="JFrac.load_elasticity_matrix"
                 C = load_isotropic_elasticity_matrix(Mesh, EPrime)
-                Elast = (C, Mesh, EPrime)
-                
-                file = open("CMatrix", "w")
-                serialize(file, Elast)
-                close(file)
-                
+                jldsave(filename; C=C, Mesh=Mesh, EPrime=EPrime)
+
                 @info "Done!" _group="JFrac.load_elasticity_matrix"
                 return C
             else
+                @error "An error occurred while loading/saving the elasticity matrix" exception=(e, catch_backtrace()) _group="JFrac.load_elasticity_matrix"
                 rethrow(e)
             end
         end

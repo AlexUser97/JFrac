@@ -18,8 +18,7 @@ module Utility
     using FilePathsBase: joinpath
     using Base.Filesystem: readdir, endswith
 
-    export plot_as_matrix, read_fracture, save_images_to_video, logging_level, setup_logging_to_console
-
+    export plot_as_matrix, read_fracture, save_images_to_video, logging_level, setup_logging_to_console, nanmin, nanmax
 
     """
         plot_as_matrix(data, mesh, fig=nothing)
@@ -47,7 +46,6 @@ module Utility
         
         return fig
     end
-
     #-----------------------------------------------------------------------------------------------------------------------
     """
         read_fracture(filename)
@@ -66,9 +64,7 @@ module Utility
         end
         return JLD2.load(filename)
     end
-
     #-----------------------------------------------------------------------------------------------------------------------
-
     """
         save_images_to_video(image_folder, video_name="movie")
 
@@ -138,7 +134,6 @@ module Utility
             end
         end
     end
-
     #-----------------------------------------------------------------------------------------------------------------------
     """
         logging_level(logging_level_string)

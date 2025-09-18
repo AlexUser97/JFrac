@@ -1,10 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-This file is part of PyFrac.
+This file is part of JFrac.
+Realization of Pyfrac on Julia language.
 
-Created by Haseeb Zia on 12.06.17.
-Copyright (c) ECOLE POLYTECHNIQUE FEDERALE DE LAUSANNE, Switzerland, Geo-Energy Laboratory, 2016-2021.
-All rights reserved. See the LICENSE.TXT file for more details.
 """
 
 module PostprocessFracture

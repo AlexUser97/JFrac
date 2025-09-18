@@ -10,7 +10,6 @@ module Properties
     using LoggingExtras
 
     include("mesh.jl")
-    include("labels.jl")
     using .Mesh: CartesianMesh, locate_element 
 
     export MaterialProperties, FluidProperties, InjectionProperties, LoadingProperties, SimulationProperties,

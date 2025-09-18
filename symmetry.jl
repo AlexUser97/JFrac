@@ -6,6 +6,8 @@ Realization of Pyfrac on Julia language.
 """
 module Symmetry
 
+    include("mesh.jl")    
+
     using .Mesh: CartesianMesh
     export get_symetric_elements, get_active_symmetric_elements,
         corresponding_elements_in_symmetric, symmetric_elasticity_matrix_from_full,

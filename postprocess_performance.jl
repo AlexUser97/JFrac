@@ -10,7 +10,7 @@ module PostprocessPerformance
     using Logging
     using FilePathsBase: joinpath
     using Base.Filesystem: readdir, isfile
-    using Serialization
+    using JLD2
     using PyPlot
     using Dates
     using RegularExpressions
@@ -37,8 +37,10 @@ module PostprocessPerformance
         # Returns
         - `perf_data::Vector`: the loaded performance data in the form of a list of IterationProperties objects.
     """
-    function load_performance_data(address::Union{String, Nothing}, sim_name::String="simulation")
-        @info "---loading performance data---" _group="JFrac.load_performace_data"
+    function load_performance_data(address::Union{String, Nothing}=nothing, sim_name::String="simulation")
+        @info "---loading performance data---" _group="JFrac.load_performance_data"
+
+        slash = Sys.iswindows() ? "\\" : "/"
 
         if address === nothing
             address = "." * slash * "_simulation_data_PyFrac"
@@ -49,35 +51,51 @@ module PostprocessPerformance
         end
 
         sim_full_name = ""
-        if occursin(r"\d+-\d+-\d+__\d+_\d+_\d+", sim_name[end-19:end])
+        if length(sim_name) >= 19 && occursin(r"\d+-\d+-\d+__\d+_\d+_\d+", sim_name[end-18:end]) 
             sim_full_name = sim_name
         else
-            simulations = readdir(address)
-            time_stamps = String[]
-            for i in simulations
-                if occursin(Regex(sim_name * "__\\d+-\\d+-\\d+__\\d+_\\d+_\\d+"), i)
-                    push!(time_stamps, i[end-19:end])
+            simulations = String[]
+            try
+                simulations = readdir(address)
+            catch e
+                if isa(e, SystemError)
+                    error("Simulation data directory '$address' not found or inaccessible.")
+                else
+                    rethrow(e)
                 end
             end
+
+            time_stamps = String[]
+            name_pattern = Regex("^" * Regex.escape(sim_name) * "__\\d+-\\d+-\\d+__\\d+_\\d+_\\d+$")
+            
+            for sim in simulations
+                if occursin(name_pattern, sim)
+                    timestamp_part = sim[end-18:end] 
+                    push!(time_stamps, timestamp_part)
+                end
+            end
+
             if length(time_stamps) == 0
-                error("Simulation not found! The address might be incorrect.")
+                error("Simulation '$sim_name' not found in directory '$address'!")
             end
 
             Tmst_sorted = sort(time_stamps)
             sim_full_name = sim_name * "__" * Tmst_sorted[end]
         end
 
-        filename = joinpath(address, sim_full_name, "perf_data.dat")
+        filename = joinpath(address, sim_full_name, "perf_data.jld2") 
+
         perf_data = nothing
         
         try
-            open(filename, "r") do inp
-                perf_data = deserialize(inp)
+            perf_data = jldopen(filename, "r") do file
+                read(file)
             end
         catch e
             if isa(e, SystemError) && !isfile(filename)
-                error("Performance data not found! Check if it's saving is enabled in simulation properties.")
+                error("Performance data file '$filename' not found! Check if saving is enabled in simulation properties.")
             else
+                @error "An error occurred while loading the performance data file '$filename'" exception=(e, catch_backtrace()) _group="JFrac.load_performance_data"
                 rethrow(e)
             end
         end

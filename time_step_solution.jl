@@ -9,6 +9,18 @@ module TimeStepSolution
     using Logging
     using LinearAlgebra
 
+    include("volume_integral.jl")
+    include("symmetry.jl")
+    include("tip_inversion.jl")
+    include("elastohydrodynamic_solver.jl")
+    include("level_set.jl")
+    include("continuous_front_reconstruction.jl")
+    include("properties.jl")
+    include("anisotropy.jl")
+    include("labels.jl")
+    include("explicit_RKL.jl")
+    include("postprocess_fracture")
+
     using .VolumeIntegral: leak_off_stagnant_tip, find_corresponding_ribbon_cell
     using .Symmetry: get_symetric_elements, self_influence
     using .TipInversion: TipAsymInversion, StressIntensityFactor
@@ -254,7 +266,6 @@ module TimeStepSolution
         return exitstatus, Fr_k
     end
 
-
     # ----------------------------------------------------------------------------------------------------------------------
 
     """
@@ -484,9 +495,7 @@ module TimeStepSolution
         return exitstatus, Fr_kplus1
     end
 
-
     # -----------------------------------------------------------------------------------------------------------------------
-
 
     """
         injection_extended_footprint(w_k, Fr_lstTmStp, C, timeStep, Qin, mat_properties, fluid_properties,
@@ -1245,9 +1254,7 @@ module TimeStepSolution
         return isempty(valid_values) ? NaN : maximum(valid_values)
     end
 
-
     # ----------------------------------------------------------------------------------------------------------------------
-
 
     """
         solve_width_pressure(Fr_lstTmStp, sim_properties, fluid_properties, mat_properties, inj_properties, EltTip,
@@ -1870,7 +1877,6 @@ module TimeStepSolution
             return any(ReNum_Ribbon .> 2100.0)
         end
     end
-
 
     # -----------------------------------------------------------------------------------------------------------------------
     """

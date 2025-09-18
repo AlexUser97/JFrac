@@ -2,7 +2,6 @@
 """
 This file is a part of JFrac.
 Realization of Pyfrac on Julia language.
-This file defines the default simulation parameters for PyFrac.jl.
 
 """
 

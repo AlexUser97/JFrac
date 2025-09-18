@@ -12,7 +12,14 @@ module Controller
     using PyPlot
     using Dates
     using JLD2
-    using Printf
+
+    include("properties.jl")
+    include("elasticity.jl")
+    include("mesh.jl")
+    include("time_step_solution.jl")
+    include("visualization.jl")
+    include("summetry.jl")
+    include("labels.jl")
 
     using .Properties: LabelProperties, IterationProperties, PlotProperties, instrument_start, instrument_close
     using .Elasticity: load_isotropic_elasticity_matrix, load_TI_elasticity_matrix, mapping_old_indexes,
@@ -1140,12 +1147,12 @@ module Controller
                 # fracture fully closed
                 output(self, Fr_n_pls1) # Assuming output is a function
                 if self.PstvInjJmp === nothing
-                    print("Fracture is fully closed.\n\nDo you want to jump to the time of next positive injection? [y/n]")
+                    println("Fracture is fully closed.\n\nDo you want to jump to the time of next positive injection? [y/n]")
                     inp = readline()
                     t0 = time() # Assuming time() from Dates
                     while !(inp in ["y", "Y", "n", "N"]) && (time() - t0) < 600
                         # inp = input("Press y or n")
-                        print("Press y or n: ")
+                        println("Press y or n: ")
                         inp = readline()
                     end
                     if inp in ["y", "Y"] || (time() - t0) >= 600
@@ -1727,7 +1734,7 @@ module Controller
                     "there is no criterion to calculate time step size."
                 while !TS_obtained
                     try
-                        print("Enter the time step size(seconds) you would like to try: ")
+                        println("Enter the time step size(seconds) you would like to try: ")
                         inp = readline()
                         time_step = parse(Float64, inp)
                         TS_obtained = true
