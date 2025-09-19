@@ -5,7 +5,7 @@ Realization of Pyfrac on Julia language.
 
 """
 
-module Fracture
+module FractureModule
 
     include("level_set.jl")
     include("volume_integral.jl")
@@ -1091,4 +1091,4 @@ module Fracture
         return nothing
     end
 
-end # module Fracture
+end # module FractureModule

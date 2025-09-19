@@ -23,7 +23,6 @@ module TipInversion
         Vm_residual, FindBracket_dist, TipAsymInversion, StressIntensityFactor,
         TipAsymInversion_hetrogenous_toughness, find_zero_vertex
 
-    # Константы
     const beta_m = 2^(1/3) * 3^(5/6)
     const beta_mtld = 4/(15^(1/4) * (2^0.5 - 1)^(1/4))
     const cnst_mc = 3 * beta_mtld^4 / (4 * beta_m^3)

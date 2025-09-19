@@ -7,170 +7,141 @@ Copyright (c) "ECOLE POLYTECHNIQUE FEDERALE DE LAUSANNE, Switzerland, Geo-Energy
 All rights reserved. See the LICENSE.TXT file for more details.
 """
 
-# imports
-import os
 
-# local imports
-from mesh import CartesianMesh
-from properties import MaterialProperties, FluidProperties, InjectionProperties, SimulationProperties
-from fracture import Fracture
-from controller import Controller
-from fracture_initialization import Geometry, InitializationParameters
-from utility import setup_logging_to_console
+using Logging
+using PyPlot 
 
-# setting up the verbosity level of the log at console
-setup_logging_to_console(verbosity_level='info')
+include(joinpath(@__DIR__, "..", "JFrac.jl"))
 
-# creating mesh
-Mesh = CartesianMesh(0.3, 0.3, 41, 41)
+using .JFrac.Mesh: CartesianMesh
+using .JFrac.Properties: MaterialProperties, FluidProperties, InjectionProperties, SimulationProperties
+using .JFrac.FractureModule: Fracture
+using .JFrac.ControllerModule: Controller
+using .JFrac.Initialization: Geometry, InitializationParameters
+using .JFrac.Utility: setup_logging_to_console 
+# 
+# Импорт модуля визуализации
+using .JFrac.Visualization: load_fractures, get_fracture_variable, plot_fracture_list,
+                            plot_analytical_solution, plot_fracture_list_at_point,
+                            plot_analytical_solution_at_point, plot_fracture_list_slice
 
-# solid properties
-nu = 0.4                            # Poisson's ratio
-youngs_mod = 3.3e10                 # Young's modulus
-Eprime = youngs_mod / (1 - nu ** 2) # plain strain modulus
-K_Ic = 0.5                          # fracture toughness
+# Настройка уровня логирования в консоль
+setup_logging_to_console(verbosity_level="info") # Реализация зависит от вашей функции
 
-# material properties
-Solid = MaterialProperties(Mesh,
-                           Eprime,
-                           K_Ic)
+println("Creating mesh...")
+Lx, Ly = 0.3, 0.3
+nx, ny = 41, 41
+Mesh = CartesianMesh(Lx, Ly, nx, ny)
 
-# injection parameters
-Q0 = 0.001  # injection rate
+# свойства твердого тела
+nu = 0.4                            # Коэффициент Пуассона
+youngs_mod = 3.3e10                 # Модуль Юнга
+Eprime = youngs_mod / (1 - nu^2)    # Модуль плоской деформации
+K_Ic = 0.5                          # Устойчивость трещины
+
+# свойства материала
+Solid = MaterialProperties(Mesh, Eprime, K_Ic)
+
+# параметры закачки
+Q0 = 0.001  # расход закачки
 Injection = InjectionProperties(Q0, Mesh)
 
-# fluid properties
+# свойства жидкости
 Fluid = FluidProperties(viscosity=1.1e-3)
 
-# simulation properties
+# свойства симуляции
+println("Setting simulation properties...")
 simulProp = SimulationProperties()
-simulProp.finalTime = 1e5                           # the time at which the simulation stops
-simulProp.set_tipAsymptote('M')                     # tip asymptote is evaluated with the viscosity dominated assumption
-simulProp.frontAdvancing = 'explicit'               # to set explicit front tracking
-simulProp.saveTSJump, simulProp.plotTSJump = 5, 5   # save and plot after every five time steps
-simulProp.set_outputFolder("./Data/M_radial_explicit_py") # the disk address where the files are saved
+simulProp.finalTime = 1e5                           # время остановки симуляции
+simulProp.set_tipAsymptote("M")                     # асимптота вершины по вязкости
+simulProp.frontAdvancing = "explicit"               # явное отслеживание фронта
+simulProp.saveTSJump, simulProp.plotTSJump = 5, 5   # сохранять и рисовать каждые 5 шагов
+simulProp.set_outputFolder("./Data/M_radial_explicit") # путь сохранения файлов
 
-# initialization parameters
-Fr_geometry = Geometry('radial', radius=0.1)
-init_param = InitializationParameters(Fr_geometry, regime='M')
+# параметры инициализации
+println("Initializing fracture...")
+Fr_geometry = Geometry("radial", radius=0.1)
+init_param = InitializationParameters(Fr_geometry, regime="M")
 
-# creating fracture object
-Fr = Fracture(Mesh,
-              init_param,
-              Solid,
-              Fluid,
-              Injection,
-              simulProp)
+# создание объекта трещины
+Fr = Fracture(Mesh, init_param, Solid, Fluid, Injection, simulProp)
 
+# создание контроллера
+controller = Controller(Fr, Solid, Fluid, Injection, simulProp)
 
-# create a Controller
-controller = Controller(Fr,
-                        Solid,
-                        Fluid,
-                        Injection,
-                        simulProp)
-
-
-
-# run the simulation
+# --- Запуск симуляции ---
+println("Running simulation...")
 controller.run()
+println("Simulation completed.")
 
-####################
-# plotting results #
-####################
+# --- Визуализация результатов ---
+# Проверка, запущен ли скрипт как часть пакетной обработки
+# В Julia можно проверить существование файла
+# if !isfile("./batch_run.txt") # Визуализируем только для отдельных примеров
 
-if not os.path.isfile('./batch_run.txt'): # We only visualize for runs of specific examples
+#     println("Loading and plotting results...")
 
-    from visualization import *
+#     # загрузка результатов симуляции
+#     Fr_list, properties = load_fractures(address="./Data/M_radial_explicit") # загрузить все трещины
+#     time_srs = get_fracture_variable(Fr_list, variable="time")               # список времен
 
-    # loading simulation results
-    Fr_list, properties = load_fractures(address="./Data/M_radial_explicit_py")        # load all fractures
-    time_srs = get_fracture_variable(Fr_list, variable='time')                      # list of times
+#     # --- Построение графиков ---
 
-    # plot fracture radius
-    plot_prop = PlotProperties()
-    plot_prop.lineStyle = '.'               # setting the line style to point
-    plot_prop.graphScaling = 'loglog'       # setting to log log plot
-    Fig_R = plot_fracture_list(Fr_list,
-                               variable='d_mean',
-                               plot_prop=plot_prop)
-    # plot analytical radius
-    Fig_R = plot_analytical_solution(regime='M',
-                                     variable='d_mean',
-                                     mat_prop=Solid,
-                                     inj_prop=Injection,
-                                     fluid_prop=Fluid,
-                                     time_srs=time_srs,
-                                     fig=Fig_R)
+#     # 1. Построение графика среднего радиуса трещины
+#     plot_prop_R = PlotProperties() # Предполагается, что PlotProperties доступен из JFrac.Visualization или JFrac.Properties
+#     plot_prop_R.lineStyle = "."               # стиль линии - точки
+#     plot_prop_R.graphScaling = "loglog"       # логарифмический масштаб
+#     Fig_R = plot_fracture_list(Fr_list, variable="d_mean", plot_prop=plot_prop_R)
+    
+#     # наложение аналитического решения для радиуса
+#     Fig_R = plot_analytical_solution("M", "d_mean", Solid, Injection, fluid_prop=Fluid,
+#                                      time_srs=time_srs, fig=Fig_R)
 
-    # plot width at center
-    Fig_w = plot_fracture_list_at_point(Fr_list,
-                                        variable='w',
-                                        plot_prop=plot_prop)
-    # plot analytical width at center
-    Fig_w = plot_analytical_solution_at_point('M',
-                                              'w',
-                                              Solid,
-                                              Injection,
-                                              fluid_prop=Fluid,
-                                              time_srs=time_srs,
-                                              fig=Fig_w)
+#     # 2. Построение графика раскрытия в центре
+#     plot_prop_w = PlotProperties()
+#     plot_prop_w.lineStyle = "."               # стиль линии - точки
+#     plot_prop_w.graphScaling = "loglog"       # логарифмический масштаб
+#     Fig_w = plot_fracture_list_at_point(Fr_list, variable="w", plot_prop=plot_prop_w)
+    
+#     # наложение аналитического решения для раскрытия в центре
+#     Fig_w = plot_analytical_solution_at_point("M", "w", Solid, Injection,
+#                                               fluid_prop=Fluid, time_srs=time_srs, fig=Fig_w)
 
+#     # 3. Построение отпечатков трещин для конкретных моментов времени
+#     specific_times = [2.0, 200.0, 5000.0, 30000.0, 100000.0]
+#     Fr_list_snapshots, properties_snapshots = load_fractures(address="./Data/M_radial_explicit",
+#                                                              time_srs=specific_times)
+#     time_srs_snapshots = get_fracture_variable(Fr_list_snapshots, variable="time")
 
-    time_srs = np.asarray([2, 200, 5000, 30000, 100000])
-    Fr_list, properties = load_fractures(address="./Data/M_radial_explicit",
-                                         time_srs=time_srs)
-    time_srs = get_fracture_variable(Fr_list,
-                                     variable='time')
+#     # отпечаток трещины (сетка + фронт)
+#     Fig_FP = plot_fracture_list(Fr_list_snapshots, variable="mesh", projection="2D")
+#     Fig_FP = plot_fracture_list(Fr_list_snapshots, variable="footprint", projection="2D", fig=Fig_FP)
+#     # наложение аналитического отпечатка
+#     Fig_FP = plot_analytical_solution("M", "footprint", Solid, Injection, fluid_prop=Fluid,
+#                                       time_srs=time_srs_snapshots, projection="2D", fig=Fig_FP)
 
-    # plot footprint
-    Fig_FP = plot_fracture_list(Fr_list,
-                                variable='mesh',
-                                projection='2D')
-    Fig_FP = plot_fracture_list(Fr_list,
-                                variable='footprint',
-                                projection='2D',
-                                fig=Fig_FP)
-    # plot analytical footprint
-    Fig_FP = plot_analytical_solution('M',
-                                      'footprint',
-                                      Solid,
-                                      Injection,
-                                      fluid_prop=Fluid,
-                                      time_srs=time_srs,
-                                      projection='2D',
-                                      fig=Fig_FP)
+#     # 4. Построение среза раскрытия
+#     # Создаем массив для возврата крайних точек (аналог np.empty)
+#     ext_pnts = Array{Float64}(undef, 2, 2) 
+#     Fig_WS = plot_fracture_list_slice(Fr_list_snapshots, variable="w", projection="2D",
+#                                       plot_cell_center=true, extreme_points=ext_pnts)
+#     # наложение аналитического среза
+#     Fig_WS = plot_analytical_solution_slice("M", "w", Solid, Injection, fluid_prop=Fluid,
+#                                             fig=Fig_WS, time_srs=time_srs_snapshots,
+#                                             point1=ext_pnts[1, :], point2=ext_pnts[2, :]) # Передаем строки как векторы
 
+#     # 5. Построение 3D визуализации
+#     Fig_Fr = plot_fracture_list(Fr_list_snapshots, variable="mesh", projection="3D")
+#     Fig_Fr = plot_fracture_list(Fr_list_snapshots, variable="width", projection="3D", fig=Fig_Fr)
+#     Fig_Fr = plot_fracture_list(Fr_list_snapshots, variable="footprint", projection="3D", fig=Fig_Fr)
 
-    # plot slice
-    ext_pnts = np.empty((2, 2), dtype=np.float64)
-    Fig_WS = plot_fracture_list_slice(Fr_list,
-                                      variable='w',
-                                      projection='2D',
-                                      plot_cell_center=True,
-                                      extreme_points=ext_pnts)
-    # plot slice analytical
-    Fig_WS = plot_analytical_solution_slice('M',
-                                            'w',
-                                            Solid,
-                                            Injection,
-                                            fluid_prop=Fluid,
-                                            fig=Fig_WS,
-                                            time_srs=time_srs,
-                                            point1=ext_pnts[0],
-                                            point2=ext_pnts[1])
+#     # Отображение всех графиков
+#     println("Displaying plots...")
+#     PyPlot.show(block=true)
+#     println("Plots displayed.")
 
-    #plotting in 3D
-    Fig_Fr = plot_fracture_list(Fr_list,
-                                variable='mesh',
-                                projection='3D')
-    Fig_Fr = plot_fracture_list(Fr_list,
-                                variable='width',
-                                projection='3D',
-                                fig=Fig_Fr)
-    Fig_Fr = plot_fracture_list(Fr_list,
-                                variable='footprint',
-                                projection='3D',
-                                fig=Fig_Fr)
+# else
+#     println("Batch run detected. Skipping visualization.")
+# end
 
-    plt.show(block=True)
+println("Script finished.")
