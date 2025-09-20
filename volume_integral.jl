@@ -7,9 +7,7 @@ Realization of Pyfrac on Julia language.
 module VolumeIntegral
 
     include("tip_inversion.jl")
-    include("utility.jl")
     using .TipInversion: f, C1, C2
-    using .Utility: nanmin, nanmax
 
     using Logging
     using QuadGK
@@ -960,6 +958,16 @@ module VolumeIntegral
         LkOff = 2 * Cprime[Elts] .* (t_since_arrival.^0.5 - t_since_arrival_lstTS.^0.5) .* area
 
         return LkOff
+    end
+
+    function nanmin(arr)
+        valid_values = filter(!isnan, arr)
+        return isempty(valid_values) ? NaN : minimum(valid_values)
+    end
+
+    function nanmax(arr)
+        valid_values = filter(!isnan, arr)
+        return isempty(valid_values) ? NaN : maximum(valid_values)
     end
 
 

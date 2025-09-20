@@ -5,12 +5,13 @@ Realization of Pyfrac on Julia language.
 
 """
 module Properties
+
     using Dates
     using Logging
     using LoggingExtras
 
-    include("mesh.jl")
-    using .Mesh: CartesianMesh, locate_element 
+    include("common_functions.jl")
+    using .CommonFunctions: locate_element 
 
     export MaterialProperties, FluidProperties, InjectionProperties, LoadingProperties, SimulationProperties,
         set_logging_to_file, set_tipAsymptote, get_tipAsymptote, set_viscousInjection, get_viscousInjection, set_volumeControl,
@@ -170,24 +171,23 @@ module Properties
         ClFunc::Union{Function, Nothing}
         wc::Float64
         porePressure::Float64
-    end
 
-    """
-        MaterialProperties(Mesh, Eprime, toughness=0.0, Carters_coef=0.0, confining_stress=0.0, grain_size=0.0, 
-                        K1c_func=nothing, anisotropic_K1c=false, confining_stress_func=nothing, 
-                        Carters_coef_func=nothing, TI_elasticity=false, Cij=nothing, free_surf=false, 
-                        free_surf_depth=1.e300, TI_plane_angle=0.0, minimum_width=1e-10, pore_pressure=-1.e100)
+        """
+            MaterialProperties(Mesh, Eprime, toughness=0.0, Carters_coef=0.0, confining_stress=0.0, grain_size=0.0, 
+                            K1c_func=nothing, anisotropic_K1c=false, confining_stress_func=nothing, 
+                            Carters_coef_func=nothing, TI_elasticity=false, Cij=nothing, free_surf=false, 
+                            free_surf_depth=1.e300, TI_plane_angle=0.0, minimum_width=1e-10, pore_pressure=-1.e100)
 
-        The constructor function for MaterialProperties.
-    """
-    function MaterialProperties(Mesh::CartesianMesh, Eprime::Float64, toughness::Float64=0.0, 
-                            Carters_coef::Float64=0.0, confining_stress::Float64=0.0, grain_size::Float64=0.0,
-                            K1c_func::Union{Function, Nothing}=nothing, anisotropic_K1c::Bool=false,
-                            confining_stress_func::Union{Function, Nothing}=nothing,
-                            Carters_coef_func::Union{Function, Nothing}=nothing, TI_elasticity::Bool=false,
-                            Cij::Union{Matrix{Float64}, Nothing}=nothing, free_surf::Bool=false,
-                            free_surf_depth::Float64=1.e300, TI_plane_angle::Float64=0.0,
-                            minimum_width::Float64=1e-10, pore_pressure::Float64=-1.e100)
+            The constructor function for MaterialProperties.
+        """
+        function MaterialProperties(Mesh, Eprime::Float64, toughness::Float64=0.0, 
+                                Carters_coef::Float64=0.0, confining_stress::Float64=0.0, grain_size::Float64=0.0,
+                                K1c_func::Union{Function, Nothing}=nothing, anisotropic_K1c::Bool=false,
+                                confining_stress_func::Union{Function, Nothing}=nothing,
+                                Carters_coef_func::Union{Function, Nothing}=nothing, TI_elasticity::Bool=false,
+                                Cij::Union{Matrix{Float64}, Nothing}=nothing, free_surf::Bool=false,
+                                free_surf_depth::Float64=1.e300, TI_plane_angle::Float64=0.0,
+                                minimum_width::Float64=1e-10, pore_pressure::Float64=-1.e100)
 
             Eprime_val = Eprime
 
@@ -236,7 +236,7 @@ module Properties
                     error("The stiffness matrix (in the canonical basis) is to be provided")
                 end
             end
-            mat_prop = MaterialProperties(
+            mat_prop = new(
                 Eprime_val,
                 K1c_val,
                 Kprime_val,
@@ -264,12 +264,13 @@ module Properties
             
             return mat_prop
         end
+    end
 
 
         # ------------------------------------------------------------------------------------------------------------------
 
-        """
-            remesh!(self, mesh)
+    """
+        remesh!(self, mesh)
 
         This function evaluates the toughness, confining stress and leak off coefficient on the given mesh using the
         functions provided in the MaterialProperties object. It should be evaluated each time re-meshing is done.
@@ -277,44 +278,44 @@ module Properties
         # Arguments
         - `self::MaterialProperties`:   -- the MaterialProperties object.
         - `mesh::CartesianMesh`:        -- the CartesianMesh object describing the new mesh.
-        """
-        function remesh!(self::MaterialProperties, mesh::CartesianMesh)
-            if self.K1cFunc !== nothing && !self.anisotropic_K1c
-                self.K1c = Vector{Float64}(undef, mesh.NumberOfElts)
-                for i in 1:mesh.NumberOfElts
-                    self.K1c[i] = self.K1cFunc(mesh.CenterCoor[i, 1], mesh.CenterCoor[i, 2])
-                end
-                self.Kprime = self.K1c * sqrt(32.0 / π)
-            elseif self.K1cFunc !== nothing && self.anisotropic_K1c
-                self.K1c = Vector{Float64}(undef, mesh.NumberOfElts)
-                for i in 1:mesh.NumberOfElts
-                    self.K1c[i] = self.K1cFunc(π / 2)
-                end
-                self.Kprime = self.K1c * sqrt(32.0 / π)
-            else
-                self.Kprime = fill(self.Kprime[1], mesh.NumberOfElts)
+    """
+    function remesh!(self::MaterialProperties, mesh)
+        if self.K1cFunc !== nothing && !self.anisotropic_K1c
+            self.K1c = Vector{Float64}(undef, mesh.NumberOfElts)
+            for i in 1:mesh.NumberOfElts
+                self.K1c[i] = self.K1cFunc(mesh.CenterCoor[i, 1], mesh.CenterCoor[i, 2])
             end
-
-            if self.SigmaOFunc !== nothing
-                self.SigmaO = Vector{Float64}(undef, mesh.NumberOfElts)
-                for i in 1:mesh.NumberOfElts
-                    self.SigmaO[i] = self.SigmaOFunc(mesh.CenterCoor[i, 1], mesh.CenterCoor[i, 2])
-                end
-            else
-                self.SigmaO = fill(self.SigmaO[1], mesh.NumberOfElts)
+            self.Kprime = self.K1c * sqrt(32.0 / π)
+        elseif self.K1cFunc !== nothing && self.anisotropic_K1c
+            self.K1c = Vector{Float64}(undef, mesh.NumberOfElts)
+            for i in 1:mesh.NumberOfElts
+                self.K1c[i] = self.K1cFunc(π / 2)
             end
-
-            if self.ClFunc !== nothing
-                self.Cl = Vector{Float64}(undef, mesh.NumberOfElts)
-                self.Cprime = Vector{Float64}(undef, mesh.NumberOfElts)
-                for i in 1:mesh.NumberOfElts
-                    self.Cl[i] = self.ClFunc(mesh.CenterCoor[i, 1], mesh.CenterCoor[i, 2])
-                end
-                self.Cprime = 2.0 * self.Cl
-            else
-                self.Cprime = fill(self.Cprime[1], mesh.NumberOfElts)
-            end
+            self.Kprime = self.K1c * sqrt(32.0 / π)
+        else
+            self.Kprime = fill(self.Kprime[1], mesh.NumberOfElts)
         end
+
+        if self.SigmaOFunc !== nothing
+            self.SigmaO = Vector{Float64}(undef, mesh.NumberOfElts)
+            for i in 1:mesh.NumberOfElts
+                self.SigmaO[i] = self.SigmaOFunc(mesh.CenterCoor[i, 1], mesh.CenterCoor[i, 2])
+            end
+        else
+            self.SigmaO = fill(self.SigmaO[1], mesh.NumberOfElts)
+        end
+
+        if self.ClFunc !== nothing
+            self.Cl = Vector{Float64}(undef, mesh.NumberOfElts)
+            self.Cprime = Vector{Float64}(undef, mesh.NumberOfElts)
+            for i in 1:mesh.NumberOfElts
+                self.Cl[i] = self.ClFunc(mesh.CenterCoor[i, 1], mesh.CenterCoor[i, 2])
+            end
+            self.Cprime = 2.0 * self.Cl
+        else
+            self.Cprime = fill(self.Cprime[1], mesh.NumberOfElts)
+        end
+    end
 
 
     # -----------------------------------------------------------------------------------------------------------------------
@@ -374,80 +375,80 @@ module Properties
         var3::Union{Float64, Nothing}
         var4::Union{Float64, Nothing}
         var5::Union{Float64, Nothing}
-    end
 
-    """
-        FluidProperties(viscosity, density=1000.0, rheology="Newtonian", turbulence=false, 
-                    compressibility=0.0, n=nothing, k=nothing, T0=nothing)
+        """
+            FluidProperties(viscosity, density=1000.0, rheology="Newtonian", turbulence=false, 
+                        compressibility=0.0, n=nothing, k=nothing, T0=nothing)
 
-        Constructor function for FluidProperties.
-    """
-    function FluidProperties(viscosity::Float64, density::Float64=1000.0, rheology::String="Newtonian", turbulence::Bool=false, 
-                            compressibility::Float64=0.0, n::Union{Float64, Nothing}=nothing, k::Union{Float64, Nothing}=nothing, T0::Union{Float64, Nothing}=nothing)
-        
-        # Process viscosity - ВСЕГДА КОНСТАНТА
-        viscosity_val = viscosity
-        muPrime_val = 12.0 * viscosity_val  # the geometric viscosity in the parallel plate solution
-        
-        # Check rheology options
-        rheologyOptions = ["Newtonian", "Herschel-Bulkley", "HBF", "power-law", "PLF"]
-        if rheology in rheologyOptions
-            rheology_val = rheology
+            Constructor function for FluidProperties.
+        """
+        function FluidProperties(viscosity::Float64, density::Float64=1000.0, rheology::String="Newtonian", turbulence::Bool=false, 
+                                compressibility::Float64=0.0, n::Union{Float64, Nothing}=nothing, k::Union{Float64, Nothing}=nothing, T0::Union{Float64, Nothing}=nothing)
             
-            # Initialize variables that might not be set
-            n_val = n
-            k_val = k
-            T0_val = T0
-            Mprime_val = nothing
-            var1_val = nothing
-            var2_val = nothing
-            var3_val = nothing
-            var4_val = nothing
-            var5_val = nothing
+            viscosity_val = viscosity
+            muPrime_val = 12.0 * viscosity_val  # the geometric viscosity in the parallel plate solution
             
-            if rheology in ["Herschel-Bulkley", "HBF"]
-                if n === nothing || k === nothing || T0 === nothing
-                    error("n (flow index), k(consistency index) and T0 (yield stress) are required for a Herschel-Bulkley type fluid!")
-                end
+            # Check rheology options
+            rheologyOptions = ["Newtonian", "Herschel-Bulkley", "HBF", "power-law", "PLF"]
+            if rheology in rheologyOptions
+                rheology_val = rheology
+                
+                # Initialize variables that might not be set
                 n_val = n
                 k_val = k
                 T0_val = T0
-                Mprime_val = 2.0^(n + 1) * (2 * n + 1)^n / n^n * k
-                var1_val = Mprime_val^(-1.0 / n)
-                var2_val = 1.0 / n - 1.0
-                var3_val = 2.0 + 1.0 / n
-                var4_val = 1.0 + 1.0 / n
-                var5_val = n / (n + 1.0)
-            elseif rheology in ["power-law", "PLF"]
-                if n === nothing || k === nothing
-                    error("n (flow index) and k(consistency index) are required for a power-law type fluid!")
+                Mprime_val = nothing
+                var1_val = nothing
+                var2_val = nothing
+                var3_val = nothing
+                var4_val = nothing
+                var5_val = nothing
+                
+                if rheology in ["Herschel-Bulkley", "HBF"]
+                    if n === nothing || k === nothing || T0 === nothing
+                        error("n (flow index), k(consistency index) and T0 (yield stress) are required for a Herschel-Bulkley type fluid!")
+                    end
+                    n_val = n
+                    k_val = k
+                    T0_val = T0
+                    Mprime_val = 2.0^(n + 1) * (2 * n + 1)^n / n^n * k
+                    var1_val = Mprime_val^(-1.0 / n)
+                    var2_val = 1.0 / n - 1.0
+                    var3_val = 2.0 + 1.0 / n
+                    var4_val = 1.0 + 1.0 / n
+                    var5_val = n / (n + 1.0)
+                elseif rheology in ["power-law", "PLF"]
+                    if n === nothing || k === nothing
+                        error("n (flow index) and k(consistency index) are required for a power-law type fluid!")
+                    end
+                    n_val = n
+                    k_val = k
+                    T0_val = 0.0
+                    Mprime_val = 2.0^(n + 1) * (2 * n + 1)^n / n^n * k
                 end
-                n_val = n
-                k_val = k
-                T0_val = 0.0
-                Mprime_val = 2.0^(n + 1) * (2 * n + 1)^n / n^n * k
+                
+                # Create FluidProperties object
+                return new(
+                    viscosity_val,
+                    muPrime_val,
+                    rheology_val,
+                    density,
+                    turbulence,
+                    compressibility,
+                    n_val,
+                    k_val,
+                    T0_val,
+                    Mprime_val,
+                    var1_val,
+                    var2_val,
+                    var3_val,
+                    var4_val,
+                    var5_val
+                )
+            else
+                error("Invalid input for fluid rheology. Possible options: " * string(rheologyOptions))
             end
-            
-            # Create FluidProperties object
-            return FluidProperties(
-                viscosity_val,
-                muPrime_val,
-                rheology_val,
-                density,
-                turbulence,
-                compressibility,
-                n_val,
-                k_val,
-                T0_val,
-                Mprime_val,
-                var1_val,
-                var2_val,
-                var3_val,
-                var4_val,
-                var5_val
-            )
-        else
-            error("Invalid input for fluid rheology. Possible options: " * string(rheologyOptions))
+
         end
     end
 
@@ -548,345 +549,345 @@ module Properties
         delayed_second_injpoint_elem::Union{Vector{Int}, Nothing}
         delayed_second_injpoint_loc_func::Union{Function, Nothing}
         init_rate_delayed_second_injpoint::Float64
-    end
 
-    """
-        InjectionProperties(rate, mesh, source_coordinates=nothing, source_loc_func=nothing, sink_loc_func=nothing,
-                        sink_vel_func=nothing, model_inj_line=false, il_compressibility=nothing, il_volume=nothing,
-                        perforation_friction=nothing, initial_pressure=nothing, rate_delayed_second_injpoint=nothing,
-                        delayed_second_injpoint_loc=nothing, initial_rate_delayed_second_injpoint=nothing,
-                        rate_delayed_inj_pt_func=nothing, delayed_second_injpoint_loc_func=nothing, check_cell_vertices=false)
+        """
+            InjectionProperties(rate, mesh, source_coordinates=nothing, source_loc_func=nothing, sink_loc_func=nothing,
+                            sink_vel_func=nothing, model_inj_line=false, il_compressibility=nothing, il_volume=nothing,
+                            perforation_friction=nothing, initial_pressure=nothing, rate_delayed_second_injpoint=nothing,
+                            delayed_second_injpoint_loc=nothing, initial_rate_delayed_second_injpoint=nothing,
+                            rate_delayed_inj_pt_func=nothing, delayed_second_injpoint_loc_func=nothing, check_cell_vertices=false)
 
-        The constructor of the InjectionProperties class.
-        ATTENTION: check_cell_vertices is new function.
-    """
-    function InjectionProperties(rate::Union{Matrix{Float64}, Float64}, mesh::CartesianMesh, 
-                            source_coordinates::Union{Vector{Float64}, Nothing}=nothing, 
-                            source_loc_func::Union{Function, Nothing}=nothing, 
-                            sink_loc_func::Union{Function, Nothing}=nothing,
-                            sink_vel_func::Union{Function, Nothing}=nothing, 
-                            model_inj_line::Bool=false, 
-                            il_compressibility::Union{Float64, Nothing}=nothing, 
-                            il_volume::Union{Float64, Nothing}=nothing,
-                            perforation_friction::Union{Float64, Nothing}=nothing, 
-                            initial_pressure::Union{Float64, Nothing}=nothing, 
-                            rate_delayed_second_injpoint::Union{Matrix{Float64}, Nothing}=nothing,
-                            delayed_second_injpoint_loc::Union{Vector{Float64}, Nothing}=nothing, 
-                            initial_rate_delayed_second_injpoint::Union{Float64, Nothing}=nothing,
-                            rate_delayed_inj_pt_func::Union{Function, Nothing}=nothing, 
-                            delayed_second_injpoint_loc_func::Union{Function, Nothing}=nothing, 
-                            check_cell_vertices::Bool=false)
-        
-        # Initialize variables that might not be set
-        injectionRate_val = Matrix{Float64}(undef, 0, 0)
-        injectionRate_delayed_second_injpoint_val = nothing
-        injectionTime_delayed_second_injpoint_val = nothing
-        rate_delayed_inj_pt_func_val = rate_delayed_inj_pt_func
-        delayed_second_injpoint_Coordinates_val = nothing
-        delayed_second_injpoint_elem_val = nothing
-        delayed_second_injpoint_loc_func_val = delayed_second_injpoint_loc_func
-        init_rate_delayed_second_injpoint_val = 0.0
-        
-        # check if the rate is provided otherwise throw an error
-        if typeof(rate) == Matrix{Float64}
-            if size(rate, 1) != 2
-                error("Invalid injection rate. The list should have 2 rows (to specify time and" *
-                    " corresponding injection rate) for each entry")
-            elseif rate[1, 1] != 0.0
-                error("The injection rate should start from zero second i.e. rate[1, 1] should" *
-                    " be zero.")
-            else
-                injectionRate_val = rate
-            end
-        else
-            injectionRate_val = [0.0 rate]
-        end
-
-        if rate_delayed_second_injpoint !== nothing && rate_delayed_inj_pt_func === nothing
-            if typeof(rate_delayed_second_injpoint) == Matrix{Float64}
-                if size(rate_delayed_second_injpoint, 1) != 2  # todo: check the condition
-                    error("Invalid injection rate of the delayed injection point. The list should have 2 rows (to specify time and" *
-                        " corresponding injection rate) for each entry")
-                elseif rate_delayed_second_injpoint[1, 1] == 0.0  # todo: check the condition
-                    error("The injection rate of the delayed injection point should start from a time >0 second i.e. rate[1, 1] should" *
-                        " be nonzero.")
-                end
-                injectionRate_delayed_second_injpoint_val = rate_delayed_second_injpoint[2, 1]
-                injectionTime_delayed_second_injpoint_val = rate_delayed_second_injpoint[1, 1]
-                rate_delayed_inj_pt_func_val = nothing
-            else
-                error("Bad specification of the delayed injection point" *
-                    " it should be a Matrix{Float64} prescribing the initial nonzero time of injection and the rate.")
-            end
-        else
+            The constructor of the InjectionProperties class.
+            ATTENTION: check_cell_vertices is new function.
+        """
+        function InjectionProperties(rate::Union{Matrix{Float64}, Float64}, mesh, 
+                                source_coordinates::Union{Vector{Float64}, Nothing}=nothing, 
+                                source_loc_func::Union{Function, Nothing}=nothing, 
+                                sink_loc_func::Union{Function, Nothing}=nothing,
+                                sink_vel_func::Union{Function, Nothing}=nothing, 
+                                model_inj_line::Bool=false, 
+                                il_compressibility::Union{Float64, Nothing}=nothing, 
+                                il_volume::Union{Float64, Nothing}=nothing,
+                                perforation_friction::Union{Float64, Nothing}=nothing, 
+                                initial_pressure::Union{Float64, Nothing}=nothing, 
+                                rate_delayed_second_injpoint::Union{Matrix{Float64}, Nothing}=nothing,
+                                delayed_second_injpoint_loc::Union{Vector{Float64}, Nothing}=nothing, 
+                                initial_rate_delayed_second_injpoint::Union{Float64, Nothing}=nothing,
+                                rate_delayed_inj_pt_func::Union{Function, Nothing}=nothing, 
+                                delayed_second_injpoint_loc_func::Union{Function, Nothing}=nothing, 
+                                check_cell_vertices::Bool=false)
+            
+            # Initialize variables that might not be set
+            injectionRate_val = Matrix{Float64}(undef, 0, 0)
+            injectionRate_delayed_second_injpoint_val = nothing
+            injectionTime_delayed_second_injpoint_val = nothing
             rate_delayed_inj_pt_func_val = rate_delayed_inj_pt_func
-        end
-
-        if initial_rate_delayed_second_injpoint !== nothing
-            init_rate_delayed_second_injpoint_val = Float64(initial_rate_delayed_second_injpoint)
-        else
-            init_rate_delayed_second_injpoint_val = 0.0
-        end
-
-        sourceElem_val = Int[]
-        
-        if delayed_second_injpoint_loc !== nothing
-            if typeof(delayed_second_injpoint_loc) == Vector{Float64}
-                delayed_second_injpoint_Coordinates_val = delayed_second_injpoint_loc
-                delayed_second_injpoint_elem_val = [locate_element(mesh, delayed_second_injpoint_Coordinates_val[1],
-                                                                delayed_second_injpoint_Coordinates_val[2])]
-                delayed_second_injpoint_loc_func_val = nothing
-            else
-                error("Bad specification of the delayed injection point" *
-                    " it should be a Vector{Float64} prescribing the coordinates of the point.")
-            end
-        elseif delayed_second_injpoint_loc_func !== nothing
-            delayed_second_injpoint_loc_func_val = delayed_second_injpoint_loc_func
-            if length(sourceElem_val) == 0
-                sourceElem_val = Int[]
-                delayed_second_injpoint_elem_val = Int[]
-            end
-            for i in 1:mesh.NumberOfElts
-                if delayed_second_injpoint_loc_func(mesh.CenterCoor[i, 1], mesh.CenterCoor[i, 2], mesh.hx, mesh.hy)
-                    push!(sourceElem_val, i)
-                    push!(delayed_second_injpoint_elem_val, i)
-                end
-            end
-        else
+            delayed_second_injpoint_Coordinates_val = nothing
             delayed_second_injpoint_elem_val = nothing
-            delayed_second_injpoint_loc_func_val = nothing
-        end
-
-        if source_loc_func === nothing
-            sourceCoordinates_val = Vector{Float64}(undef, 2)
-            if source_coordinates !== nothing
-                if length(source_coordinates) == 2
-                    @info "Setting the source coordinates to the closest cell center..."
-                    sourceCoordinates_val = source_coordinates
+            delayed_second_injpoint_loc_func_val = delayed_second_injpoint_loc_func
+            init_rate_delayed_second_injpoint_val = 0.0
+            
+            # check if the rate is provided otherwise throw an error
+            if typeof(rate) == Matrix{Float64}
+                if size(rate, 1) != 2
+                    error("Invalid injection rate. The list should have 2 rows (to specify time and" *
+                        " corresponding injection rate) for each entry")
+                elseif rate[1, 1] != 0.0
+                    error("The injection rate should start from zero second i.e. rate[1, 1] should" *
+                        " be zero.")
                 else
-                    # error
-                    error("Invalid source coordinates. Correct format: a list or numpy array with a single" *
-                        " row and two columns to \n specify x and y coordinate of the source e.g." *
-                        " [x_coordinate, y_coordinate]")
+                    injectionRate_val = rate
                 end
             else
-                sourceCoordinates_val = [0.0, 0.0]
+                injectionRate_val = [0.0 rate]
             end
 
-            sourceElem_single = locate_element(mesh, sourceCoordinates_val[1], sourceCoordinates_val[2])
-            if isnan(sourceElem_single)
-                error("The given source location is out of the mesh!")
+            if rate_delayed_second_injpoint !== nothing && rate_delayed_inj_pt_func === nothing
+                if typeof(rate_delayed_second_injpoint) == Matrix{Float64}
+                    if size(rate_delayed_second_injpoint, 1) != 2  # todo: check the condition
+                        error("Invalid injection rate of the delayed injection point. The list should have 2 rows (to specify time and" *
+                            " corresponding injection rate) for each entry")
+                    elseif rate_delayed_second_injpoint[1, 1] == 0.0  # todo: check the condition
+                        error("The injection rate of the delayed injection point should start from a time >0 second i.e. rate[1, 1] should" *
+                            " be nonzero.")
+                    end
+                    injectionRate_delayed_second_injpoint_val = rate_delayed_second_injpoint[2, 1]
+                    injectionTime_delayed_second_injpoint_val = rate_delayed_second_injpoint[1, 1]
+                    rate_delayed_inj_pt_func_val = nothing
+                else
+                    error("Bad specification of the delayed injection point" *
+                        " it should be a Matrix{Float64} prescribing the initial nonzero time of injection and the rate.")
+                end
+            else
+                rate_delayed_inj_pt_func_val = rate_delayed_inj_pt_func
             end
-            sourceElem_val = [sourceElem_single]
-            sourceCoordinates_val = mesh.CenterCoor[sourceElem_single, :]
-            @info "Injection point: (x, y) = ($(mesh.CenterCoor[sourceElem_single, 1]), $(mesh.CenterCoor[sourceElem_single, 2]))"
-            sourceLocFunc_val = nothing
-        else
-            sourceLocFunc_val = source_loc_func
+
+            if initial_rate_delayed_second_injpoint !== nothing
+                init_rate_delayed_second_injpoint_val = Float64(initial_rate_delayed_second_injpoint)
+            else
+                init_rate_delayed_second_injpoint_val = 0.0
+            end
+
             sourceElem_val = Int[]
-            for i in 1:mesh.NumberOfElts
-                inside = false
-                if check_cell_vertices
-                    # Check all vertices
-                    vertices = mesh.VertexCoor[mesh.Connectivity[i, :], :]
-                    for v in 1:size(vertices, 1)
-                        if source_loc_func(vertices[v, 1], vertices[v, 2])
-                            inside = true
-                            break
+            
+            if delayed_second_injpoint_loc !== nothing
+                if typeof(delayed_second_injpoint_loc) == Vector{Float64}
+                    delayed_second_injpoint_Coordinates_val = delayed_second_injpoint_loc
+                    delayed_second_injpoint_elem_val = [locate_element(mesh, delayed_second_injpoint_Coordinates_val[1],
+                                                                    delayed_second_injpoint_Coordinates_val[2])]
+                    delayed_second_injpoint_loc_func_val = nothing
+                else
+                    error("Bad specification of the delayed injection point" *
+                        " it should be a Vector{Float64} prescribing the coordinates of the point.")
+                end
+            elseif delayed_second_injpoint_loc_func !== nothing
+                delayed_second_injpoint_loc_func_val = delayed_second_injpoint_loc_func
+                if length(sourceElem_val) == 0
+                    sourceElem_val = Int[]
+                    delayed_second_injpoint_elem_val = Int[]
+                end
+                for i in 1:mesh.NumberOfElts
+                    if delayed_second_injpoint_loc_func(mesh.CenterCoor[i, 1], mesh.CenterCoor[i, 2], mesh.hx, mesh.hy)
+                        push!(sourceElem_val, i)
+                        push!(delayed_second_injpoint_elem_val, i)
+                    end
+                end
+            else
+                delayed_second_injpoint_elem_val = nothing
+                delayed_second_injpoint_loc_func_val = nothing
+            end
+
+            if source_loc_func === nothing
+                sourceCoordinates_val = Vector{Float64}(undef, 2)
+                if source_coordinates !== nothing
+                    if length(source_coordinates) == 2
+                        @info "Setting the source coordinates to the closest cell center..."
+                        sourceCoordinates_val = source_coordinates
+                    else
+                        # error
+                        error("Invalid source coordinates. Correct format: a list or numpy array with a single" *
+                            " row and two columns to \n specify x and y coordinate of the source e.g." *
+                            " [x_coordinate, y_coordinate]")
+                    end
+                else
+                    sourceCoordinates_val = [0.0, 0.0]
+                end
+
+                sourceElem_single = locate_element(mesh, sourceCoordinates_val[1], sourceCoordinates_val[2])
+                if isnan(sourceElem_single)
+                    error("The given source location is out of the mesh!")
+                end
+                sourceElem_val = [sourceElem_single]
+                sourceCoordinates_val = mesh.CenterCoor[sourceElem_single, :]
+                @info "Injection point: (x, y) = ($(mesh.CenterCoor[sourceElem_single, 1]), $(mesh.CenterCoor[sourceElem_single, 2]))"
+                sourceLocFunc_val = nothing
+            else
+                sourceLocFunc_val = source_loc_func
+                sourceElem_val = Int[]
+                for i in 1:mesh.NumberOfElts
+                    inside = false
+                    if check_cell_vertices
+                        # Check all vertices
+                        vertices = mesh.VertexCoor[mesh.Connectivity[i, :], :]
+                        for v in 1:size(vertices, 1)
+                            if source_loc_func(vertices[v, 1], vertices[v, 2])
+                                inside = true
+                                break
+                            end
+                        end
+                    else
+                        # Previous logic
+                        inside = source_loc_func(mesh.CenterCoor[i, 1], mesh.CenterCoor[i, 2])
+                    end
+                    if inside
+                        push!(sourceElem_val, i)
+                    end
+                end
+            end
+            
+            if delayed_second_injpoint_elem_val !== nothing && !all(elem in sourceElem_val for elem in delayed_second_injpoint_elem_val)
+                error("The delayed injection points elements are not contained in the list of all the injection elements")
+            end
+
+            if length(sourceElem_val) == 0
+                error("No source element found!")
+            end
+            
+            sourceCoordinates_val = [mean(mesh.CenterCoor[sourceElem_val, 1]),
+                                    mean(mesh.CenterCoor[sourceElem_val, 2])]
+
+            sinkLocFunc_val = sink_loc_func
+            sinkVelFunc_val = sink_vel_func
+            sinkElem_val = Int[]
+            sinkVel_val = Float64[]
+            
+            if sink_loc_func !== nothing
+                if sink_vel_func === nothing
+                    error("Sink velocity function is required for sink elements!")
+                end
+
+                for i in 1:mesh.NumberOfElts
+                    if sink_loc_func(mesh.CenterCoor[i, 1], mesh.CenterCoor[i, 2])
+                        push!(sinkElem_val, i)
+                    end
+                end
+
+                sinkVel_val = Vector{Float64}(undef, length(sinkElem_val))
+                for i in 1:length(sinkElem_val)
+                    sinkVel_val[i] = sink_vel_func(mesh.CenterCoor[sinkElem_val[i], 1],
+                                                mesh.CenterCoor[sinkElem_val[i], 2])
+                end
+            end
+
+            modelInjLine_val = model_inj_line
+            ILCompressibility_val = nothing
+            ILVolume_val = nothing
+            perforationFriction_val = nothing
+            initPressure_val = nothing
+            
+            if model_inj_line
+                if il_compressibility !== nothing
+                    ILCompressibility_val = il_compressibility
+                else
+                    error("Injection line compressibility is required!")
+                end
+                if il_volume !== nothing
+                    ILVolume_val = il_volume
+                else
+                    error("Injection line volume is required!")
+                end
+                if perforation_friction !== nothing
+                    perforationFriction_val = perforation_friction
+                else
+                    error("Perforation friction is required!")
+                end
+                if initial_pressure !== nothing
+                    initPressure_val = initial_pressure
+                else
+                    error("initial pressure of the injection line is required!")
+                end
+            end
+            
+            # Create InjectionProperties object
+            return new(
+                injectionRate_val,
+                sourceCoordinates_val,
+                sourceElem_val,
+                sourceLocFunc_val,
+                sinkLocFunc_val,
+                sinkVelFunc_val,
+                sinkElem_val,
+                sinkVel_val,
+                modelInjLine_val,
+                ILCompressibility_val,
+                ILVolume_val,
+                perforationFriction_val,
+                initPressure_val,
+                injectionRate_delayed_second_injpoint_val,
+                injectionTime_delayed_second_injpoint_val,
+                rate_delayed_inj_pt_func_val,
+                delayed_second_injpoint_Coordinates_val,
+                delayed_second_injpoint_elem_val,
+                delayed_second_injpoint_loc_func_val,
+                init_rate_delayed_second_injpoint_val,
+                check_cell_vertices
+            )
+            end
+
+            # -------------------------------------------------------------------------------------------------------------------
+
+            """
+                get_injection_rate(self, tm, frac)
+
+            This function gives the current injection rate at all of the cells in the domain.
+
+            # Arguments
+            - `self::InjectionProperties`: -- the InjectionProperties object.
+            - `tm::Float64`:               -- the time at which the injection rate is required.
+            - `frac::Fracture`:            -- the Fracture object containing the mesh and the current fracture elements.
+
+            # Returns
+            - `Qin::Vector{Float64}`:      -- a vector of the size of the mesh with injection rates in each of the cell.
+            """
+            function get_injection_rate(self::InjectionProperties, tm::Float64, frac)::Vector{Float64}
+                Qin = zeros(Float64, frac.mesh.NumberOfElts)
+                indxCurTime = maximum(findall(tm .>= self.injectionRate[1, :]))
+                currentRate = self.injectionRate[2, indxCurTime]  # current injection rate
+                currentSource = intersect(self.sourceElem, frac.EltChannel)
+                if length(currentSource) > 0
+                    Qin[currentSource] .= currentRate / length(currentSource)
+                end
+
+                return Qin
+            end
+
+            # -------------------------------------------------------------------------------------------------------------------
+
+            """
+            remesh!(self, new_mesh, old_mesh)
+
+            This function is called every time the domain is remeshed.
+
+            # Arguments
+            - `self::InjectionProperties`: -- the InjectionProperties object.
+            - `new_mesh::CartesianMesh`:   -- the CartesianMesh object describing the new coarse mesh.
+            - `old_mesh::CartesianMesh`:   -- the CartesianMesh object describing the old mesh.
+            """
+            function remesh!(self::InjectionProperties, new_mesh, old_mesh)
+                # update source elements according to the new mesh.
+                if self.sourceLocFunc === nothing
+                    actv_cells = Set{Int}()
+                    for i in self.sourceElem
+                        push!(actv_cells, Int(locate_element(new_mesh, old_mesh.CenterCoor[i, 1], old_mesh.CenterCoor[i, 2])))
+                    end
+                    self.sourceElem = collect(actv_cells)
+                else
+                    self.sourceElem = Int[]
+                    for i in 1:new_mesh.NumberOfElts
+                        if self.sourceLocFunc(new_mesh.CenterCoor[i, 1], new_mesh.CenterCoor[i, 2])
+                            push!(self.sourceElem, i)
+                        end
+                    end
+                end
+
+                self.sourceCoordinates = Float64[]
+                source_coords_x = Float64[]
+                source_coords_y = Float64[]
+                for elem in self.sourceElem
+                    push!(source_coords_x, new_mesh.CenterCoor[elem, 1])
+                    push!(source_coords_y, new_mesh.CenterCoor[elem, 2])
+                end
+                self.sourceCoordinates = [mean(source_coords_x), mean(source_coords_y)]
+
+                if self.delayed_second_injpoint_loc_func !== nothing
+                    if length(self.sourceElem) == 0
+                        self.sourceElem = Int[]
+                        self.delayed_second_injpoint_elem = Int[]
+                    end
+                    for i in 1:new_mesh.NumberOfElts
+                        if self.delayed_second_injpoint_loc_func(new_mesh.CenterCoor[i, 1], new_mesh.CenterCoor[i, 2],
+                                                            new_mesh.hx, new_mesh.hy)
+                            push!(self.sourceElem, i)
+                            push!(self.delayed_second_injpoint_elem, i)
                         end
                     end
                 else
-                    # Previous logic
-                    inside = source_loc_func(mesh.CenterCoor[i, 1], mesh.CenterCoor[i, 2])
+                    self.delayed_second_injpoint_elem = nothing
                 end
-                if inside
-                    push!(sourceElem_val, i)
-                end
-            end
-        end
-        
-        if delayed_second_injpoint_elem_val !== nothing && !all(elem in sourceElem_val for elem in delayed_second_injpoint_elem_val)
-            error("The delayed injection points elements are not contained in the list of all the injection elements")
-        end
 
-        if length(sourceElem_val) == 0
-            error("No source element found!")
-        end
-        
-        sourceCoordinates_val = [mean(mesh.CenterCoor[sourceElem_val, 1]),
-                                mean(mesh.CenterCoor[sourceElem_val, 2])]
-
-        sinkLocFunc_val = sink_loc_func
-        sinkVelFunc_val = sink_vel_func
-        sinkElem_val = Int[]
-        sinkVel_val = Float64[]
-        
-        if sink_loc_func !== nothing
-            if sink_vel_func === nothing
-                error("Sink velocity function is required for sink elements!")
-            end
-
-            for i in 1:mesh.NumberOfElts
-                if sink_loc_func(mesh.CenterCoor[i, 1], mesh.CenterCoor[i, 2])
-                    push!(sinkElem_val, i)
-                end
-            end
-
-            sinkVel_val = Vector{Float64}(undef, length(sinkElem_val))
-            for i in 1:length(sinkElem_val)
-                sinkVel_val[i] = sink_vel_func(mesh.CenterCoor[sinkElem_val[i], 1],
-                                            mesh.CenterCoor[sinkElem_val[i], 2])
-            end
-        end
-
-        modelInjLine_val = model_inj_line
-        ILCompressibility_val = nothing
-        ILVolume_val = nothing
-        perforationFriction_val = nothing
-        initPressure_val = nothing
-        
-        if model_inj_line
-            if il_compressibility !== nothing
-                ILCompressibility_val = il_compressibility
-            else
-                error("Injection line compressibility is required!")
-            end
-            if il_volume !== nothing
-                ILVolume_val = il_volume
-            else
-                error("Injection line volume is required!")
-            end
-            if perforation_friction !== nothing
-                perforationFriction_val = perforation_friction
-            else
-                error("Perforation friction is required!")
-            end
-            if initial_pressure !== nothing
-                initPressure_val = initial_pressure
-            else
-                error("initial pressure of the injection line is required!")
-            end
-        end
-        
-        # Create InjectionProperties object
-        return InjectionProperties(
-            injectionRate_val,
-            sourceCoordinates_val,
-            sourceElem_val,
-            sourceLocFunc_val,
-            sinkLocFunc_val,
-            sinkVelFunc_val,
-            sinkElem_val,
-            sinkVel_val,
-            modelInjLine_val,
-            ILCompressibility_val,
-            ILVolume_val,
-            perforationFriction_val,
-            initPressure_val,
-            injectionRate_delayed_second_injpoint_val,
-            injectionTime_delayed_second_injpoint_val,
-            rate_delayed_inj_pt_func_val,
-            delayed_second_injpoint_Coordinates_val,
-            delayed_second_injpoint_elem_val,
-            delayed_second_injpoint_loc_func_val,
-            init_rate_delayed_second_injpoint_val,
-            check_cell_vertices
-        )
-        end
-
-        # -------------------------------------------------------------------------------------------------------------------
-
-        """
-            get_injection_rate(self, tm, frac)
-
-        This function gives the current injection rate at all of the cells in the domain.
-
-        # Arguments
-        - `self::InjectionProperties`: -- the InjectionProperties object.
-        - `tm::Float64`:               -- the time at which the injection rate is required.
-        - `frac::Fracture`:            -- the Fracture object containing the mesh and the current fracture elements.
-
-        # Returns
-        - `Qin::Vector{Float64}`:      -- a vector of the size of the mesh with injection rates in each of the cell.
-        """
-        function get_injection_rate(self::InjectionProperties, tm::Float64, frac::Fracture)::Vector{Float64}
-            Qin = zeros(Float64, frac.mesh.NumberOfElts)
-            indxCurTime = maximum(findall(tm .>= self.injectionRate[1, :]))
-            currentRate = self.injectionRate[2, indxCurTime]  # current injection rate
-            currentSource = intersect(self.sourceElem, frac.EltChannel)
-            if length(currentSource) > 0
-                Qin[currentSource] .= currentRate / length(currentSource)
-            end
-
-            return Qin
-        end
-
-        # -------------------------------------------------------------------------------------------------------------------
-
-        """
-        remesh!(self, new_mesh, old_mesh)
-
-        This function is called every time the domain is remeshed.
-
-        # Arguments
-        - `self::InjectionProperties`: -- the InjectionProperties object.
-        - `new_mesh::CartesianMesh`:   -- the CartesianMesh object describing the new coarse mesh.
-        - `old_mesh::CartesianMesh`:   -- the CartesianMesh object describing the old mesh.
-        """
-        function remesh!(self::InjectionProperties, new_mesh::CartesianMesh, old_mesh::CartesianMesh)
-            # update source elements according to the new mesh.
-            if self.sourceLocFunc === nothing
-                actv_cells = Set{Int}()
-                for i in self.sourceElem
-                    push!(actv_cells, Int(locate_element(new_mesh, old_mesh.CenterCoor[i, 1], old_mesh.CenterCoor[i, 2])))
-                end
-                self.sourceElem = collect(actv_cells)
-            else
-                self.sourceElem = Int[]
-                for i in 1:new_mesh.NumberOfElts
-                    if self.sourceLocFunc(new_mesh.CenterCoor[i, 1], new_mesh.CenterCoor[i, 2])
-                        push!(self.sourceElem, i)
+                if self.sinkLocFunc !== nothing
+                    self.sinkElem = Int[]
+                    for i in 1:new_mesh.NumberOfElts
+                        if self.sinkLocFunc(new_mesh.CenterCoor[i, 1], new_mesh.CenterCoor[i, 2])
+                            push!(self.sinkElem, i)
+                        end
                     end
-                end
-            end
 
-            self.sourceCoordinates = Float64[]
-            source_coords_x = Float64[]
-            source_coords_y = Float64[]
-            for elem in self.sourceElem
-                push!(source_coords_x, new_mesh.CenterCoor[elem, 1])
-                push!(source_coords_y, new_mesh.CenterCoor[elem, 2])
-            end
-            self.sourceCoordinates = [mean(source_coords_x), mean(source_coords_y)]
-
-            if self.delayed_second_injpoint_loc_func !== nothing
-                if length(self.sourceElem) == 0
-                    self.sourceElem = Int[]
-                    self.delayed_second_injpoint_elem = Int[]
-                end
-                for i in 1:new_mesh.NumberOfElts
-                    if self.delayed_second_injpoint_loc_func(new_mesh.CenterCoor[i, 1], new_mesh.CenterCoor[i, 2],
-                                                        new_mesh.hx, new_mesh.hy)
-                        push!(self.sourceElem, i)
-                        push!(self.delayed_second_injpoint_elem, i)
+                    self.sinkVel = Vector{Float64}(undef, length(self.sinkElem))
+                    for i in 1:length(self.sinkElem)
+                        self.sinkVel[i] = self.sinkVelFunc(new_mesh.CenterCoor[self.sinkElem[i], 1],
+                                                        new_mesh.CenterCoor[self.sinkElem[i], 2])
                     end
-                end
-            else
-                self.delayed_second_injpoint_elem = nothing
-            end
-
-            if self.sinkLocFunc !== nothing
-                self.sinkElem = Int[]
-                for i in 1:new_mesh.NumberOfElts
-                    if self.sinkLocFunc(new_mesh.CenterCoor[i, 1], new_mesh.CenterCoor[i, 2])
-                        push!(self.sinkElem, i)
-                    end
-                end
-
-                self.sinkVel = Vector{Float64}(undef, length(self.sinkElem))
-                for i in 1:length(self.sinkElem)
-                    self.sinkVel[i] = self.sinkVelFunc(new_mesh.CenterCoor[self.sinkElem[i], 1],
-                                                    new_mesh.CenterCoor[self.sinkElem[i], 2])
                 end
             end
         end
@@ -907,26 +908,26 @@ module Properties
     mutable struct LoadingProperties
         EltLoaded::Vector{Int}
         displRate::Float64
-    end
 
-    """
-        LoadingProperties(displ_rate=0.0, loaded_elts=nothing)
+        """
+            LoadingProperties(displ_rate=0.0, loaded_elts=nothing)
 
-        The constructor of the LoadingProperties class.
+            The constructor of the LoadingProperties class.
 
-        # Arguments
-        - `displ_rate::Float64`:    -- the rate at which the elements in the EltLoaded list are displaced due to the
-                                    applied mechanical loading.
-        - `loaded_elts::Vector{Int}`: -- array of elements that are loaded.
-    """
-    function LoadingProperties(displ_rate::Float64=0.0, loaded_elts::Union{Vector{Int}, Nothing}=nothing)
-        if loaded_elts !== nothing
-            EltLoaded_val = loaded_elts
-        else
-            error("The loaded elements should be given in the form a Vector{Int} of integers.")
+            # Arguments
+            - `displ_rate::Float64`:    -- the rate at which the elements in the EltLoaded list are displaced due to the
+                                        applied mechanical loading.
+            - `loaded_elts::Vector{Int}`: -- array of elements that are loaded.
+        """
+        function LoadingProperties(displ_rate::Float64=0.0, loaded_elts::Union{Vector{Int}, Nothing}=nothing)
+            if loaded_elts !== nothing
+                EltLoaded_val = loaded_elts
+            else
+                error("The loaded elements should be given in the form a Vector{Int} of integers.")
+            end
+            
+            return new(EltLoaded_val, displ_rate)
         end
-        
-        return LoadingProperties(EltLoaded_val, displ_rate)
     end
 
     # ----------------------------------------------------------------------------------------------------------------------
@@ -1188,172 +1189,169 @@ module Properties
         roughness_sigma::Union{Float64, Nothing}
 
         __timeStamp::String
-    end
 
-    """
-        SimulationProperties(address=nothing)
+        """
+            SimulationProperties(address=nothing)
 
-        The constructor of the SimulationProperties class. See documentation of the class.
-    """
-    function SimulationProperties(address::Union{String, Nothing}=nothing)
+            The constructor of the SimulationProperties class. See documentation of the class.
+        """
+        function SimulationProperties(address::Union{String, Nothing}=nothing)
 
-        param_module = if address === nothing
-            default_parameters
-        else
-            user_module = Module(:UserSimParams)
-            full_path = joinpath(address, "simul_param.jl") 
-            try
-                Base.include(user_module, full_path)
-                user_module
-            catch e
-                @error "Failed to load parameters from $full_path" exception=(e, catch_backtrace())
-                @info "Falling back to default parameters"
+            param_module = if address === nothing
                 default_parameters
+            else
+                user_module = Module(:UserSimParams)
+                full_path = joinpath(address, "simul_param.jl") 
+                try
+                    Base.include(user_module, full_path)
+                    user_module
+                catch e
+                    @error "Failed to load parameters from $full_path" exception=(e, catch_backtrace())
+                    @info "Falling back to default parameters"
+                    default_parameters
+                end
             end
-        end
 
-        timestamp = string(Dates.now())
+            timestamp = string(Dates.now())
 
-        sim_prop = SimulationProperties(
-            # tolerances
-            param_module.toleranceFractureFront,
-            param_module.toleranceEHL,
-            param_module.tol_projection,
-            param_module.toleranceVStagnant,
-            param_module.Hersh_Bulk_epsilon,
-            param_module.Hersh_Bulk_Gmin,
+            sim_prop = new(
+                # tolerances
+                param_module.toleranceFractureFront,
+                param_module.toleranceEHL,
+                param_module.tol_projection,
+                param_module.toleranceVStagnant,
+                param_module.Hersh_Bulk_epsilon,
+                param_module.Hersh_Bulk_Gmin,
 
-            # max iterations
-            param_module.max_front_itrs,
-            param_module.max_solver_itrs,
-            param_module.max_proj_Itrs,
+                # max iterations
+                param_module.max_front_itrs,
+                param_module.max_solver_itrs,
+                param_module.max_proj_Itrs,
 
-            # time and time stepping
-            param_module.maximum_steps,
-            param_module.tmStp_prefactor,
-            param_module.final_time, # Union{Float64, Nothing}
-            param_module.req_sol_at, # Union{Vector{Float64}, Nothing}
-            param_module.timeStep_limit, # Union{Float64, Nothing}
-            param_module.fixed_time_step, # Union{Matrix{Float64}, Float64, Nothing}
+                # time and time stepping
+                param_module.maximum_steps,
+                param_module.tmStp_prefactor,
+                param_module.final_time, # Union{Float64, Nothing}
+                param_module.req_sol_at, # Union{Vector{Float64}, Nothing}
+                param_module.timeStep_limit, # Union{Float64, Nothing}
+                param_module.fixed_time_step, # Union{Matrix{Float64}, Float64, Nothing}
 
-            # time step re-attempt
-            param_module.max_reattemps,
-            param_module.reattempt_factor,
-            param_module.max_reattemps_FracAdvMore2Cells,
+                # time step re-attempt
+                param_module.max_reattemps,
+                param_module.reattempt_factor,
+                param_module.max_reattemps_FracAdvMore2Cells,
 
-            # output parameters
-            param_module.plot_figure,
-            param_module.plot_analytical,
-            param_module.analytical_sol, # Union{String, Nothing}
-            param_module.sim_name, # Union{String, Nothing}
-            param_module.output_folder, # Union{String, Nothing}
-            "",
-            param_module.save_to_disk,
-            param_module.bck_color, # Union{String, Nothing}
-            param_module.block_figure,
-            param_module.plot_TS_jump,
-            param_module.plot_time_period, # Union{Float64, Nothing}
-            param_module.plot_var,
-            param_module.save_TS_jump,
-            param_module.save_time_period, # Union{Float64, Nothing}
-            param_module.plot_at_sol_time_series,
+                # output parameters
+                param_module.plot_figure,
+                param_module.plot_analytical,
+                param_module.analytical_sol, # Union{String, Nothing}
+                param_module.sim_name, # Union{String, Nothing}
+                param_module.output_folder, # Union{String, Nothing}
+                "",
+                param_module.save_to_disk,
+                param_module.bck_color, # Union{String, Nothing}
+                param_module.block_figure,
+                param_module.plot_TS_jump,
+                param_module.plot_time_period, # Union{Float64, Nothing}
+                param_module.plot_var,
+                param_module.save_TS_jump,
+                param_module.save_time_period, # Union{Float64, Nothing}
+                param_module.plot_at_sol_time_series,
 
-            # solver type
-            param_module.elastohydr_solver,
-            param_module.m_Anderson,
-            param_module.relaxation_param,
-            param_module.mech_loading,
-            param_module.viscous_injection,
-            param_module.volume_control,
-            param_module.substitute_pressure,
-            param_module.solve_deltaP,
-            param_module.solve_stagnant_tip,
-            param_module.solve_tip_corr_rib,
-            param_module.solve_sparse, # Union{Bool, Nothing}
+                # solver type
+                param_module.elastohydr_solver,
+                param_module.m_Anderson,
+                param_module.relaxation_param,
+                param_module.mech_loading,
+                param_module.viscous_injection,
+                param_module.volume_control,
+                param_module.substitute_pressure,
+                param_module.solve_deltaP,
+                param_module.solve_stagnant_tip,
+                param_module.solve_tip_corr_rib,
+                param_module.solve_sparse, # Union{Bool, Nothing}
 
-            # miscellaneous
-            param_module.use_block_toepliz_compression,
-            param_module.verbosity_level,
-            param_module.log_to_file,
-            param_module.tip_asymptote,
-            param_module.save_regime,
-            param_module.enable_remeshing,
-            param_module.remesh_factor,
+                # miscellaneous
+                param_module.use_block_toepliz_compression,
+                param_module.verbosity_level,
+                param_module.log_to_file,
+                param_module.tip_asymptote,
+                param_module.save_regime,
+                param_module.enable_remeshing,
+                param_module.remesh_factor,
 
-            param_module.mesh_extension_direction, # Vector{Bool}
-            param_module.mesh_extension_factor, # Vector{Float64}
-            param_module.mesh_extension_all_sides,
-            Inf, # maxElementIn
-            Inf, # maxCellSize
-            param_module.mesh_reduction_factor,
-            true, # meshReductionPossible
-            param_module.limit_Adancement_To_2_cells,
-            param_module.force_time_step_limit_and_max_adv_to_2_cells,
-            param_module.front_advancing,
-            param_module.collect_perf_data,
-            param_module.param_from_tip,
-            param_module.save_ReyNumb,
-            param_module.gravity,
-            param_module.TI_Kernel_exec_path,
-            param_module.save_fluid_flux,
-            param_module.save_fluid_vel,
-            param_module.save_fluid_flux_as_vector,
-            param_module.save_fluid_vel_as_vector,
-            param_module.save_effective_viscosity,
-            param_module.save_statistics_post_coalescence,
-            param_module.save_yield_ratio,
-            param_module.save_G,
-            param_module.explicit_projection,
-            param_module.symmetric,
-            param_module.double_fracture_vol_contr,
-            param_module.proj_method,
-            param_module.enable_GPU,
-            param_module.n_threads,
+                param_module.mesh_extension_direction, # Vector{Bool}
+                param_module.mesh_extension_factor, # Vector{Float64}
+                param_module.mesh_extension_all_sides,
+                Inf, # maxElementIn
+                Inf, # maxCellSize
+                param_module.mesh_reduction_factor,
+                true, # meshReductionPossible
+                param_module.limit_Adancement_To_2_cells,
+                param_module.force_time_step_limit_and_max_adv_to_2_cells,
+                param_module.front_advancing,
+                param_module.collect_perf_data,
+                param_module.param_from_tip,
+                param_module.save_ReyNumb,
+                param_module.gravity,
+                param_module.TI_Kernel_exec_path,
+                param_module.save_fluid_flux,
+                param_module.save_fluid_vel,
+                param_module.save_fluid_flux_as_vector,
+                param_module.save_fluid_vel_as_vector,
+                param_module.save_effective_viscosity,
+                param_module.save_statistics_post_coalescence,
+                param_module.save_yield_ratio,
+                param_module.save_G,
+                param_module.explicit_projection,
+                param_module.symmetric,
+                param_module.double_fracture_vol_contr,
+                param_module.proj_method,
+                param_module.enable_GPU,
+                param_module.n_threads,
 
-            # fracture geometry
-            param_module.height, # Union{Float64, Nothing}
-            param_module.aspect_ratio, # Union{Float64, Nothing}
+                # fracture geometry
+                param_module.height, # Union{Float64, Nothing}
+                param_module.aspect_ratio, # Union{Float64, Nothing}
 
-            # parameter deciding to save the leak-off tip parameter
-            param_module.save_chi,
+                # parameter deciding to save the leak-off tip parameter
+                param_module.save_chi,
 
-            # roughness parameters
-            param_module.roughness_model, # Union{String, Nothing}
-            param_module.roughness_sigma, # Union{Float64, Nothing}
-            
-            timestamp # __timeStamp
-        )
+                # roughness parameters
+                param_module.roughness_model, # Union{String, Nothing}
+                param_module.roughness_sigma, # Union{Float64, Nothing}
+                
+                timestamp # __timeStamp
+            )
 
-        # --- Validation ---
-        # Валидация fixedTmStp
-        if sim_prop.fixedTmStp !== nothing && isa(sim_prop.fixedTmStp, Matrix{Float64})
-            if size(sim_prop.fixedTmStp, 1) != 2
-                error("Invalid fixed time step. The list should have 2 rows (to specify time and " *
-                    "corresponding time step) for each entry")
+            # --- Validation ---
+            if sim_prop.fixedTmStp !== nothing && isa(sim_prop.fixedTmStp, Matrix{Float64})
+                if size(sim_prop.fixedTmStp, 1) != 2
+                    error("Invalid fixed time step. The list should have 2 rows (to specify time and " *
+                        "corresponding time step) for each entry")
+                end
             end
-        end
 
-        # Валидация paramFromTip
-        if sim_prop.paramFromTip
-            error("Parameters from tip not yet supported!")
-        end
+            if sim_prop.paramFromTip
+                error("Parameters from tip not yet supported!")
+            end
 
-        # Валидация projMethod
-        if !(sim_prop.projMethod in ["ILSA_orig", "LS_grad", "LS_continousfront"])
-            error("Projection method is not recognised!")
-        end
+            if !(sim_prop.projMethod in ["ILSA_orig", "LS_grad", "LS_continousfront"])
+                error("Projection method is not recognised!")
+            end
 
-        # Валидация doublefracture/projMethod
-        if sim_prop.projMethod != "LS_continousfront" && sim_prop.doublefracture
-            error("You set the option doublefracture=True but\n " *
-                "The volume control solver has been implemented \n" *
-                "only with the option projMethod==LS_continousfront activated")
-        end
+            if sim_prop.projMethod != "LS_continousfront" && sim_prop.doublefracture
+                error("You set the option doublefracture=True but\n " *
+                    "The volume control solver has been implemented \n" *
+                    "only with the option projMethod==LS_continousfront activated")
+            end
 
-        return sim_prop
+            return sim_prop
+        end
     end
 
     # ----------------------------------------------------------------------------------------------------------------------
+    
     function set_logging_to_file(self::SimulationProperties, address::String, verbosity_level::Union{String, Nothing}=nothing)
 
         level_str = something(verbosity_level, self.verbositylevel)
@@ -2044,7 +2042,7 @@ module Properties
         legend_val = var_labels[variable]
         useLatex_val = use_latex
         
-        return LabelProperties(
+        return new(
             yLabel_val,
             xLabel_val,
             zLabel_val,

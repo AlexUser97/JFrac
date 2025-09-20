@@ -9,7 +9,7 @@ module Visualization
     include("postprocess_fracture.jl")
     include("properties.jl")
     include("labels.jl")
-    using .PostprocessFracture: 
+    using .PostprocessFracture: get_fracture_variable, get_fracture_variable_at_point, get_HF_analytical_solution, get_HF_analytical_solution_at_point 
     using .Properties: PlotProperties, LabelProperties
     using .Labels: supported_variables, supported_projections, unidimensional_variables, suitable_elements
 

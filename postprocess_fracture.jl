@@ -22,7 +22,7 @@ module PostprocessFracture
 
     using .Utility: ReadFracture
     using .HFReferenceSolutions: HF_analytical_sol, get_fracture_dimensions_analytical
-    using .Labels:
+    using .Labels: supported_variables, unidimensional_variables, bidimensional_variables, required_string, err_msg_variable, err_var_not_saved
 
     export load_fractures, rename_simulation, get_fracture_variable, get_fracture_variable_at_point, get_fracture_variable_slice_interpolated,
         get_fracture_variable_slice_cell_center, get_HF_analytical_solution, get_HF_analytical_solution_at_point, get_fracture_dimensions_analytical_with_properties,
@@ -56,12 +56,12 @@ module PostprocessFracture
         # Returns
         - `Tuple{Vector, Any}`: a list of fractures and properties
     """
-    function load_fractures(address=nothing, sim_name='simulation', time_period=0.0, time_srs=nothing, step_size=1, load_all=false):
+    function load_fractures(address=nothing, sim_name="simulation", time_period=0.0, time_srs=nothing, step_size=1, load_all=false)
 
         logger = Logging.current_logger()
         @info "Returning fractures..."
 
-        if address === nothing:
+        if address === nothing
             address = "." * slash * "_simulation_data_PyFrac"
         end
 
@@ -1004,7 +1004,7 @@ module PostprocessFracture
                                                         density=density,
                                                         Cij=Cij,
                                                         gamma=gamma,
-                                                        required=get_required_string(variable), # Assuming this function exists
+                                                        required=required_string[variable],
                                                         Vinj=V0)
                 
                 push!(mesh_list, mesh_i)
@@ -1058,21 +1058,6 @@ module PostprocessFracture
         return return_list, mesh_list
     end
 
-    # Helper function to get required string (needs to be implemented based on your requirements)
-    function get_required_string(variable)
-        # This should map variable names to required strings for HF_analytical_sol
-        required_map = Dict(
-            "time" => "t",
-            "t" => "t",
-            "width" => "w", 
-            "w" => "w",
-            "net pressure" => "pn",
-            "pn" => "pn",
-            "front velocity" => "v",
-            "v" => "v"
-        )
-        return get(required_map, variable, "")
-    end
 
 
     #-----------------------------------------------------------------------------------------------------------------------

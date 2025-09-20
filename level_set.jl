@@ -9,8 +9,6 @@ module LevelSet
 
     using Logging
     using NLsolve
-    include("utility.jl")
-    using .Utility: nanmin, nanmax
 
     export SolveFMM, reconstruct_front, reconstruct_front_LS_gradient, UpdateLists, Eikonal_Res
 
@@ -601,6 +599,17 @@ module LevelSet
         
         return residual
     end
+
+    function nanmin(arr)
+        valid_values = filter(!isnan, arr)
+        return isempty(valid_values) ? NaN : minimum(valid_values)
+    end
+
+    function nanmax(arr)
+        valid_values = filter(!isnan, arr)
+        return isempty(valid_values) ? NaN : maximum(valid_values)
+    end
+
 end # module LevelSet
 
 

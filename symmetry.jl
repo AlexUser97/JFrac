@@ -6,7 +6,6 @@ Realization of Pyfrac on Julia language.
 """
 module Symmetry
 
-    # using .Mesh: CartesianMesh
 
     export get_symetric_elements, get_active_symmetric_elements,
         corresponding_elements_in_symmetric, symmetric_elasticity_matrix_from_full,
@@ -24,7 +23,7 @@ module Symmetry
         # Returns
         - `symetric_elts::Matrix{Int}`: The matrix containing four symmetric elements for each input element.
     """
-    function get_symetric_elements(mesh::CartesianMesh, elements::Vector{Int})::Matrix{Int}
+    function get_symetric_elements(mesh, elements::Vector{Int})::Matrix{Int}
         symetric_elts = Matrix{Int}(undef, length(elements), 4)
         for i in 1:length(elements)
             i_x = elements[i] % mesh.nx
@@ -59,7 +58,7 @@ module Symmetry
         - `boundary_x::Vector{Int}`: Elements intersecting the x-axis.
         - `boundary_y::Vector{Int}`: Elements intersecting the y-axis.
     """
-    function get_active_symmetric_elements(mesh::CartesianMesh)
+    function get_active_symmetric_elements(mesh)
         # elements in the quadrant with positive x and y coordinates
         pos_qdrnt = intersect(
             findall(mesh.CenterCoor[:, 1] .> mesh.hx / 2),
@@ -95,7 +94,7 @@ module Symmetry
         # Returns
         - `correspondence::Vector{Int}`: The correspondence array mapping mesh elements to symmetric elements.
     """
-    function corresponding_elements_in_symmetric(mesh::CartesianMesh)::Vector{Int}
+    function corresponding_elements_in_symmetric(mesh)::Vector{Int}
         correspondence = Vector{Int}(undef, mesh.NumberOfElts)
         all_elmnts, pos_qdrnt, boundary_x, boundary_y = get_active_symmetric_elements(mesh)
 
@@ -134,7 +133,7 @@ module Symmetry
         # Returns
         - `C_sym::Matrix{Float32}`: The symmetric elasticity matrix.
     """
-    function symmetric_elasticity_matrix_from_full(C::Matrix{Float32}, mesh::CartesianMesh)::Matrix{Float32}
+    function symmetric_elasticity_matrix_from_full(C::Matrix{Float32}, mesh)::Matrix{Float32}
         all_elmnts, pos_qdrnt, boundary_x, boundary_y = get_active_symmetric_elements(mesh)
 
         no_elements = length(pos_qdrnt) + length(boundary_x) + length(boundary_y) + 1
@@ -226,7 +225,7 @@ module Symmetry
         # Returns
         - `C_sym::Matrix{Float32}`: -- the elasticity matrix for a symmetric fracture.
     """
-    function load_isotropic_elasticity_matrix_symmetric(mesh::CartesianMesh, Ep::Float64)::Matrix{Float32}
+    function load_isotropic_elasticity_matrix_symmetric(mesh, Ep::Float64)::Matrix{Float32}
         all_elmnts, pos_qdrnt, boundary_x, boundary_y = get_active_symmetric_elements(mesh)
 
         no_elements = length(pos_qdrnt) + length(boundary_x) + length(boundary_y) + 1
@@ -354,7 +353,7 @@ module Symmetry
         # Returns
         - `Float64`: The self influence coefficient.
     """
-    function self_influence(mesh::CartesianMesh, Ep::Float64)::Float64
+    function self_influence(mesh, Ep::Float64)::Float64
         a = mesh.hx / 2.0
         b = mesh.hy / 2.0
         
