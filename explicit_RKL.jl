@@ -13,7 +13,7 @@ module ExplicitRKL
     using Base.Threads
 
     include("elastohydrodynamic_solver.jl")
-    using .ElastohydrodynamicSolver: finiteDiff_operator_laminar, FiniteDiff_operator_turbulent_implicit, Gravity_term
+    using .ElastoHydrodynamicSolver: finiteDiff_operator_laminar, FiniteDiff_operator_turbulent_implicit, Gravity_term
     include("properties.jl")
     using .Properties: instrument_start, instrument_close
 

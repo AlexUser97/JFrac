@@ -24,7 +24,7 @@ module TimeStepSolution
     using .VolumeIntegral: leak_off_stagnant_tip, find_corresponding_ribbon_cell
     using .Symmetry: get_symetric_elements, self_influence
     using .TipInversion: TipAsymInversion, StressIntensityFactor
-    using .ElastohydrodynamicSolver: 
+    using .ElastoHydrodynamicSolver: 
     using .LevelSet: SolveFMM, reconstruct_front, reconstruct_front_LS_gradient, UpdateLists
     using .ContinuousFrontReconstruction: reconstruct_front_continuous, UpdateListsFromContinuousFrontRec, you_advance_more_than_2_cells
     using .Properties: IterationProperties, instrument_start, instrument_close

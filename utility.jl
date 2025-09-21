@@ -8,9 +8,7 @@ Realization of Pyfrac on Julia language.
 module Utility
 
     include("tip_inversion.jl")
-    include("mesh.jl")
-    using .Utility: TipAsymInversion
-    using .Mesh: CartesianMesh
+    using .TipInversion: TipAsymInversion
     using JLD2
     using Logging
     using LoggingExtras
@@ -33,11 +31,11 @@ module Utility
         # Returns
         - `PyObject`: The figure object.
     """
-    function plot_as_matrix(data::Vector{Float64}, mesh::CartesianMesh, fig::Union{PyObject, Nothing}=nothing)
+    function plot_as_matrix(data::Vector{Float64}, mesh, fig=nothing)
         if fig === nothing
             fig = PyPlot.figure()
         end
-        ax = PyPlot.matplotlib.pyplot.gca() # или fig.add_subplot(111) если возможно
+        ax = PyPlot.matplotlib.pyplot.gca()
         
         ReMesh = reshape(data, (mesh.nx, mesh.ny))'
         cax = PyPlot.matshow(ReMesh)

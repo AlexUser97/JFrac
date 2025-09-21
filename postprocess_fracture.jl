@@ -20,7 +20,7 @@ module PostprocessFracture
     include("HF_reference_solutions.jl")
     include("labels.jl")
 
-    using .Utility: ReadFracture
+    using .Utility: read_fracture
     using .HFReferenceSolutions: HF_analytical_sol, get_fracture_dimensions_analytical
     using .Labels: supported_variables, unidimensional_variables, bidimensional_variables, required_string, err_msg_variable, err_var_not_saved
 
@@ -28,7 +28,7 @@ module PostprocessFracture
         get_fracture_variable_slice_cell_center, get_HF_analytical_solution, get_HF_analytical_solution_at_point, get_fracture_dimensions_analytical_with_properties,
         write_fracture_variable_csv_file, read_fracture_variable_csv_file, write_fracture_mesh_csv_file, append_to_json_file, get_extremities_cells,
         get_front_intercepts, write_properties_csv_file, get_fracture_geometric_parameters, get_Ffront_as_vector, get_fracture_fp, 
-        get_velocity_as_vector, get_velocity_slice, 
+        get_velocity_as_vector, get_velocity_slice
 
     slash = Sys.iswindows() ? '\\' : '/'
 
@@ -36,44 +36,41 @@ module PostprocessFracture
 
     """
         load_fractures(address=nothing, sim_name="simulation", time_period=0.0, time_srs=nothing, step_size=1, load_all=false)
-
         This function returns a list of the fractures. If address and simulation name are not provided, results from the
         default address and having the default name will be loaded.
-
         # Arguments
         - `address::Union{String, Nothing}`: the folder address containing the saved files. If it is not provided,
-                                        simulation from the default folder (_simulation_data_PyFrac) will be loaded.
+                                    simulation from the default folder (_simulation_data_PyFrac) will be loaded.
         - `sim_name::String`: the simulation name from which the fractures are to be loaded. If not
-                                        provided, simulation with the default name (Simulation) will be loaded.
+                                    provided, simulation with the default name (Simulation) will be loaded.
         - `time_period::Float64`: time period between two successive fractures to be loaded. if not provided,
-                                        all fractures will be loaded.
+                                    all fractures will be loaded.
         - `time_srs::Union{Vector{Float64}, Float64, Int, Nothing}`: if provided, the fracture stored at the closest time after the given times
-                                        will be loaded.
+                                    will be loaded.
         - `step_size::Int`: the number of time steps to skip before loading the next fracture. If not
-                                        provided, all of the fractures will be loaded.
+                                    provided, all of the fractures will be loaded.
         - `load_all::Bool`: avoid jumping time steps too close to each other
-
         # Returns
         - `Tuple{Vector, Any}`: a list of fractures and properties
     """
     function load_fractures(address=nothing, sim_name="simulation", time_period=0.0, time_srs=nothing, step_size=1, load_all=false)
-
-        logger = Logging.current_logger()
         @info "Returning fractures..."
 
+        # Set default address if not provided
+        slash = Sys.iswindows() ? "\\" : "/"
         if address === nothing
             address = "." * slash * "_simulation_data_PyFrac"
         end
-
         if address[end] != slash
-            address = address * slash
+            address *= slash
         end
 
+        # Process time_srs input
         if time_srs !== nothing
-            if isa(time_srs, Number)
-                time_srs = [Float64(time_srs)]
-            elseif isa(time_srs, Vector)
-                time_srs = Float64.(time_srs)
+            if typeof(time_srs) <: Real
+                time_srs = [time_srs]
+            elseif !(typeof(time_srs) <: Vector)
+                error("time_srs must be a Vector, Float64, Int, or nothing")
             end
         end
 
@@ -81,9 +78,11 @@ module PostprocessFracture
         sim_full_path = address * sim_full_name
         properties_file = sim_full_path * slash * "properties.jld2"
 
-        if isfile(properties_file)
-            properties = load(properties_file)
-        else
+        # Load properties
+        properties = nothing
+        try
+            properties = load(properties_file, "properties")
+        catch e
             error("Data not found. The address might be incorrect")
         end
 
@@ -91,64 +90,98 @@ module PostprocessFracture
         next_t = 0.0
         t_srs_indx = 1
         fracture_list = []
+        t_srs_given = time_srs !== nothing
 
-        if time_srs !== nothing
-            if length(time_srs) == 0
-                return fracture_list
-            end
+        if t_srs_given && !isempty(time_srs)
             next_t = time_srs[t_srs_indx]
         end
 
-        # time at wich the first fracture file was modified
+        # Load fractures
         while fileNo < 500000
-            # trying to load next file. exit loop if not found
-            filename = sim_full_path * slash * sim_full_name * "_file_" * string(fileNo) * ".jld2"
-            
-            if isfile(filename)
-                try
-                    ff = load(filename)
-                    fileNo += step_size
-                    
-                    if load_all
-                        @info "Returning fracture at " * string(ff.time) * " s"
+            fracture_file = sim_full_path * slash * sim_full_name * "_file_" * string(fileNo) * ".jld2"
+            try
+                ff = load(fracture_file, "fracture")
+                if load_all
+                    @info "Returning fracture at $(ff.time) s"
+                    push!(fracture_list, ff)
+                else
+                    if 1.0 - next_t / ff.time >= -1e-8
+                        @info "Returning fracture at $(ff.time) s"
                         push!(fracture_list, ff)
-                    else
-                        if 1.0 - next_t / ff.time >= -1e-8
-                            # if the current fracture time has advanced the output time period
-                            @info "Returning fracture at " * string(ff.time) * " s"
-                            push!(fracture_list, ff)
-
-                            if t_srs_given
-                                if t_srs_indx < length(time_srs)
-                                    t_srs_indx += 1
-                                    next_t = time_srs[t_srs_indx]
-                                end
-                                if ff.time > maximum(time_srs)
-                                    break
-                                end
-                            else
-                                next_t = ff.time + time_period
+                        if t_srs_given
+                            if t_srs_indx < length(time_srs)
+                                t_srs_indx += 1
+                                next_t = time_srs[t_srs_indx]
                             end
+                            if ff.time > maximum(time_srs)
+                                break
+                            end
+                        else
+                            next_t = ff.time + time_period
                         end
                     end
-                catch e
-                    @error "Error loading file $filename: $e"
-                    break
                 end
-            else
+                fileNo += step_size
+            catch e
                 break
             end
         end
 
         if fileNo >= 500000
-            error("too many files.")
+            error("Too many files.")
         end
 
-        if length(fracture_list) == 0
+        if isempty(fracture_list)
             error("Fracture list is empty")
         end
 
         return fracture_list, properties
+    end
+
+    """
+        load_last_fracture(address=nothing, sim_name="simulation")
+        Load the last fracture from the simulation.
+        # Arguments
+        - `address::Union{String, Nothing}`: the folder address containing the saved files.
+        - `sim_name::String`: the simulation name from which the fracture is to be loaded.
+        # Returns
+        - `Tuple`: the last fracture and properties
+    """
+    function load_last_fracture(address=nothing, sim_name="simulation")
+        slash = Sys.iswindows() ? "\\" : "/"
+
+        if address === nothing
+            address = "." * slash * "_simulation_data_PyFrac"
+        end
+        if address[end] != slash
+            address *= slash
+        end
+
+        sim_full_name = sim_name
+        sim_full_path = address * sim_full_name
+        properties_file = sim_full_path * slash * "properties.jld2"
+
+        # Load properties
+        properties = nothing
+        try
+            properties = load(properties_file, "properties")
+        catch e
+            error("Data not found. The address might be incorrect")
+        end
+
+        # Find the last fracture file
+        max_fileNo = 500000
+        for fileNo in max_fileNo:-1:0
+            fracture_file = sim_full_path * slash * sim_full_name * "_file_" * string(fileNo) * ".jld2"
+            try
+                ff = load(fracture_file, "fracture")
+                return ff, properties
+            catch e
+                continue
+            end
+        end
+
+        error("No fracture file found")
     end
 
     #-----------------------------------------------------------------------------------------------------------------------
@@ -1919,7 +1952,7 @@ module PostprocessFracture
 
     #-----------------------------------------------------------------------------------------------------------------------
     include("elastohydrodynamic_solver.jl")
-    using ElastohydrodynamicSolver: calculate_fluid_flow_characteristics_laminar
+    using .ElastoHydrodynamicSolver: calculate_fluid_flow_characteristics_laminar
 
     """
         get_velocity_as_vector(Solid, Fluid, Fr_list)

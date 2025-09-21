@@ -64,7 +64,7 @@ module HFReferenceSolutions
         p = nothing
         v = nothing
 
-        if required[4] == '1'  , so required[4] is the 4th character
+        if required[4] == '1'
             rho = sqrt.(Mesh.CenterCoor[:, 1].^2 + Mesh.CenterCoor[:, 2].^2) / R  # normalized distance from center
             actvElts = findall(rho .<= 1)  # active cells (inside fracture)
             var1 = 1 .- rho[actvElts]
@@ -84,7 +84,7 @@ module HFReferenceSolutions
                 1 .- rho[actvElts] .^ 2) .^ 0.5 + 0.718095 * hypergeom([-7/20, 1/2], [13/20], rho[actvElts] .^ 2))
         end
 
-        if required[3] == '1'  , so required[3] is the 3rd character
+        if required[3] == '1'
             rho = sqrt.(Mesh.CenterCoor[:, 1].^2 + Mesh.CenterCoor[:, 2].^2) / R  # normalized distance from center
             if actvElts === nothing
                 actvElts = findall(rho .<= 1)  # active cells (inside fracture)
@@ -119,7 +119,7 @@ module HFReferenceSolutions
             end
         end
 
-        if required[5] == '1'  , so required[5] is the 5th character
+        if required[5] == '1'
             v = gammam * 0.45977011494252873 * (t^(0.45977011494252873-1.0)) * ((
                 (2^0.16091954022988506) * (Eprime^0.11494252873563218) * (Q0^0.3103448275862069) ) /
                 ((3^0.08045977011494253) * (fo^0.11494252873563218) * (visc^0.08045977011494253) * (

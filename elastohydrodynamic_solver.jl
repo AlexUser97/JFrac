@@ -702,12 +702,10 @@ module ElastoHydrodynamicSolver
             pf[to_solve] = C[to_solve, EltCrack] * wNplusOne[EltCrack] + mat_prop.SigmaO[to_solve]
             if sim_prop.solveDeltaP
                 pf[active] = frac_n.pFluid[active] + sol[length(to_solve)+1:length(to_solve) + length(active)]
-                pf[to_impose] = frac_n.pFluid[to_impose] + sol[length(to_solve) + length(active)+1:
-                                                                length(to_solve) + length(active) + length(to_impose)]
+                pf[to_impose] = frac_n.pFluid[to_impose] + sol[length(to_solve) + length(active)+1:length(to_solve) + length(active) + length(to_impose)]
             else
                 pf[active] = sol[length(to_solve)+1:length(to_solve) + length(active)]
-                pf[to_impose] = sol[length(to_solve) + length(active)+1:
-                                    length(to_solve) + length(active) + length(to_impose)]
+                pf[to_impose] = sol[length(to_solve) + length(active)+1:length(to_solve) + length(active) + length(to_impose)]
             end
 
             if fluid_prop.turbulence

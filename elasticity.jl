@@ -13,9 +13,6 @@ module Elasticity
     using FilePathsBase: joinpath
     using Base.Filesystem: isfile
 
-    include("mesh.jl")
-    using .Mesh: CartesianMesh
-
     export load_isotropic_elasticity_matrix, load_isotropic_elasticity_matrix_toepliz, 
         get_Cij_Matrix, load_TI_elasticity_matrix, load_elasticity_matrix, mapping_old_indexes
 
@@ -31,7 +28,7 @@ module Elasticity
         # Returns
         - `Matrix{Float32}`: the elasticity matrix.
     """
-    function load_isotropic_elasticity_matrix(Mesh::CartesianMesh, Ep::Float64)::Matrix{Float32}
+    function load_isotropic_elasticity_matrix(Mesh, Ep::Float64)::Matrix{Float32}
         """
         a and b are the half breadth and height of a cell
         ___________________________________
@@ -98,7 +95,7 @@ module Elasticity
         # Returns
         - `load_isotropic_elasticity_matrix_toepliz`: initialized object.
     """
-    function load_isotropic_elasticity_matrix_toepliz(Mesh::CartesianMesh, Ep::Float64)
+    function load_isotropic_elasticity_matrix_toepliz(Mesh, Ep::Float64)
         const_val = (Ep / (8.0 * π))
         obj = load_isotropic_elasticity_matrix_toepliz(Ep, const_val, 0.0, 0.0, 0, Float32[])
         reload!(obj, Mesh)
@@ -114,7 +111,7 @@ module Elasticity
         - `self::load_isotropic_elasticity_matrix_toepliz`: the object instance.
         - `Mesh::CartesianMesh`: a mesh object describing the domain.
     """
-    function reload!(self::load_isotropic_elasticity_matrix_toepliz, Mesh::CartesianMesh)
+    function reload!(self::load_isotropic_elasticity_matrix_toepliz, Mesh)
         hx = Mesh.hx
         hy = Mesh.hy
         a = hx / 2.0
@@ -302,7 +299,7 @@ module Elasticity
         # Returns
         - `Matrix{Float64}`: the elasticity matrix.
     """
-    function load_TI_elasticity_matrix(Mesh::CartesianMesh, mat_prop, sim_prop)::Matrix{Float64}
+    function load_TI_elasticity_matrix(Mesh, mat_prop, sim_prop)::Matrix{Float64}
         log = Logging.current_logger()
         @info "Writing parameters to a file..." _group="JFrac.load_TI_elasticity_matrix"
         
@@ -379,7 +376,7 @@ module Elasticity
         # Returns
         - `Matrix`: the elasticity matrix.
     """
-    function load_elasticity_matrix(Mesh::CartesianMesh, EPrime::Float64)
+    function load_elasticity_matrix(Mesh, EPrime::Float64)
         log = Logging.current_logger()
         @info "Reading global elasticity matrix..." _group="JFrac.load_elasticity_matrix"
 
@@ -430,7 +427,7 @@ module Elasticity
         # Returns
         - `Vector{Int}`: array of new indexes.
     """
-    function mapping_old_indexes(new_mesh::CartesianMesh, mesh::CartesianMesh, direction::Union{String, Nothing}=nothing)::Vector{Int}
+    function mapping_old_indexes(new_mesh, mesh, direction::Union{String, Nothing}=nothing)::Vector{Int}
         dne = (new_mesh.NumberOfElts - mesh.NumberOfElts)
         dnx = (new_mesh.nx - mesh.nx)
         dny = (new_mesh.ny - mesh.ny)

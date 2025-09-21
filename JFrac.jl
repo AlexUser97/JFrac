@@ -26,7 +26,7 @@ module JFrac
     include("visualization.jl")
     include("volume_integral.jl")
 
-    export Anisotropy, ContinuousFrontReconstruction, Controller, DefaultParameters, Elasticity, ElastohydrodynamicSolver,
+    export Anisotropy, ContinuousFrontReconstruction, Controller, DefaultParameters, Elasticity, ElastoHydrodynamicSolver,
            ExplicitRKL, FluidModel, FractureModule, FractureInitialization, HFReferenceSolutions, Labels, LevelSet, Mesh, PostprocessFracture, PostprocessPerformance,
            TimeStepSolution, TipInversion, Utility, Visualization, VolumeIntegral, Properties, Symmetry
 

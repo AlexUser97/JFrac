@@ -71,7 +71,7 @@ module Mesh
                                                 positive quadrant, the boundaries and the injection cell have the weights of 4, 2
                                                 and 1 respectively.
 
-    # """
+    """
     mutable struct CartesianMesh
         
         Lx::Float64
@@ -98,13 +98,13 @@ module Mesh
         CenterElts::Vector{Int}
 
         symmetric::Bool
-        corresponding::Union{Vector{Int}, nothing}
-        symmetricElts::Union{Matrix{Int}, nothing}
-        activeSymtrc::Union{Vector{Int}, nothing}
-        posQdrnt::Union{Vector{Int}, nothing}
-        boundary_x::union{Vector{Int}, nothing}
-        boundary_y::Union{Vector{Int}, nothing}
-        volWeights::Union{Vector{Float32}, nothing}
+        corresponding::Union{Vector{Int}, Nothing}
+        symmetricElts::Union{Matrix{Int}, Nothing}
+        activeSymtrc::Union{Vector{Int}, Nothing}
+        posQdrnt::Union{Vector{Int}, Nothing}
+        boundary_x::Union{Vector{Int}, Nothing}
+        boundary_y::Union{Vector{Int}, Nothing}
+        volWeights::Union{Vector{Float32}, Nothing}
 
 
         function CartesianMesh(Lx::Float64, Ly::Float64, nx::Int, ny::Int, symmetric::Bool=false)

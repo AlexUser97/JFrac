@@ -10,12 +10,12 @@ module Visualization
     include("properties.jl")
     include("labels.jl")
     using .PostprocessFracture: get_fracture_variable, get_fracture_variable_at_point, get_HF_analytical_solution, get_HF_analytical_solution_at_point 
-    using .Properties: PlotProperties, LabelProperties
+    using .Properties: PlotProperties, LabelProperties, MaterialProperties, FluidProperties
     using .Labels: supported_variables, supported_projections, unidimensional_variables, suitable_elements
 
     using PyPlot
     using Logging
-    using PyCall
+    using OpenCV
 
     export plot_fracture_list, plot_fracture_list_slice, plot_fracture_list_at_point, plot_fracture_variable_as_vector,
     plot_variable_vs_time, plot_fracture_variable_as_image, plot_fracture_variable_as_surface, plot_fracture_surface,
@@ -1476,7 +1476,7 @@ module Visualization
     """
 
     function plot_analytical_solution_slice(regime::String, variable::String, mat_prop, inj_prop, 
-                                        mesh::Union{CartesianMesh, Nothing}=nothing, 
+                                        mesh=nothing, 
                                         fluid_prop::Union{FluidProperties, Nothing}=nothing, 
                                         fig::Union{PyPlot.Figure, Nothing}=nothing,
                                         point1::Union{Vector{Float64}, Nothing}=nothing, 
@@ -1921,49 +1921,51 @@ module Visualization
         - `PyPlot.Figure`: A Figure object that can be used superimpose further plots.
     """
 
-    function plot_footprint_analytical(regime::String, mat_prop, inj_prop, 
-                                    fluid_prop::Union{FluidProperties, Nothing}=nothing, 
-                                    time_srs::Union{Vector, Nothing}=nothing, 
-                                    h::Union{Float64, Nothing}=nothing, 
-                                    samp_cell::Union{Int, Nothing}=nothing,
-                                    fig::Union{PyPlot.Figure, Nothing}=nothing, 
-                                    plot_prop::Union{PlotProperties, Nothing}=nothing, 
-                                    gamma::Union{Float64, Nothing}=nothing, 
-                                    inj_point::Union{Vector, Nothing}=nothing)
-        
-        @info "PyFrac.plot_footprint_analytical"
+    function plot_footprint_analytical(regime::String, mat_prop, inj_prop;
+                                    fluid_prop=nothing, time_srs=nothing,
+                                    h=nothing, samp_cell=nothing,
+                                    fig=nothing, plot_prop=nothing,
+                                    gamma=nothing, inj_point=nothing)
         @info "Plotting analytical footprint..."
 
+        # Create or use existing figure
         if fig === nothing
             fig = PyPlot.figure()
-            ax = fig.add_subplot(111)
-        else
-            ax = fig.get_axes()[1]
         end
 
+        # Get current axes (create if doesn't exist)
+        ax = PyPlot.gca()
+
+        # Use default plot properties if not provided
         if plot_prop === nothing
             plot_prop = PlotProperties()
         end
 
-        footprint_patches = get_HF_analytical_solution_footprint(regime, mat_prop, inj_prop, plot_prop,
-                                                            fluid_prop=fluid_prop, time_srs=time_srs,
-                                                            h=h, samp_cell=samp_cell, gamma=gamma,
-                                                            inj_point=inj_point)
+        # Get analytical solution footprint patches
+        footprint_patches = get_HF_analytical_solution_footprint(
+            regime, mat_prop, inj_prop, plot_prop,
+            fluid_prop=fluid_prop, time_srs=time_srs,
+            h=h, samp_cell=samp_cell,
+            gamma=gamma, inj_point=inj_point
+        )
 
-        for i in footprint_patches
-            ax.add_patch(i)
-            # Note: 3D patch conversion may need special handling
-            # In Julia/PyPlot, this might be handled differently
-            try
-                # If ax has 3D capabilities, convert 2D patch to 3D
-                if hasproperty(ax, :get_zlim) || isa(ax, PyCall.PyObject) && pybuiltin("hasattr")(ax, "get_zlim")
-                    # art3d.pathpatch_2d_to_3d(i) - this would need proper PyCall implementation
-                    # For now, we'll skip this as it's matplotlib-specific
-                end
-            catch e
-                # Silently continue if 3D conversion fails
+        # Add each patch to the plot
+        for patch in footprint_patches
+            ax.add_patch(patch)
+
+            # Handle 3D case if needed (PyPlot doesn't have direct art3d equivalent)
+            if hasproperty(ax, :get_zlim)
+                # For 3D plots, you might need to use different approach
+                # This is a placeholder for 3D conversion logic
+                # In PyPlot, 3D patches are typically handled with mplot3D toolkit
             end
         end
+
+        # Set equal aspect ratio for proper scaling
+        ax.set_aspect("equal")
+
+        # Update figure canvas
+        fig.canvas.draw_idle()
 
         return fig
     end
@@ -2013,7 +2015,7 @@ module Visualization
     """
 
     function plot_analytical_solution(regime::String, variable::String, mat_prop, inj_prop, 
-                                    mesh::Union{CartesianMesh, Nothing}=nothing, 
+                                    mesh=nothing, 
                                     fluid_prop::Union{FluidProperties, Nothing}=nothing, 
                                     fig::Union{PyPlot.Figure, Nothing}=nothing,
                                     projection::String="2D", 
@@ -2636,13 +2638,6 @@ module Visualization
         
         # Note: OpenCV.jl or similar package would be needed for this functionality
         # This is a conceptual translation - you'll need to install appropriate packages
-        
-        try
-            using OpenCV
-        catch
-            @warn "OpenCV.jl is not available. Video creation functionality will not work."
-            return
-        end
         
         if !occursin(".avi", video_name)
             video_name = video_name * ".avi"

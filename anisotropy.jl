@@ -29,7 +29,7 @@ module Anisotropy
         # Returns
         - `::Vector{Float64}`: angles (in radians) for each ribbon element
     """
-    function projection_from_ribbon(ribbon_elts::Vector{Int}, channel_elts::Vector{Int}, mesh::CartesianMesh, sgnd_dist::Vector{Float64})::Vector{Float64}
+    function projection_from_ribbon(ribbon_elts::Vector{Int}, channel_elts::Vector{Int}, mesh, sgnd_dist::Vector{Float64})::Vector{Float64}
 
         # reconstruct front to get tip cells from the given level set
         elt_tip, l_tip, alpha_tip, CellStatus = reconstruct_front_LS_gradient(sgnd_dist,
@@ -113,7 +113,7 @@ module Anisotropy
                     y_rgt::Vector{Float64},
                     neig_lft::Vector{Int},
                     neig_rgt::Vector{Int},
-                    mesh::CartesianMesh)::Vector{Float64}
+                    mesh)::Vector{Float64}
 
         closest_tip_cell = zeros(Int, length(elt_ribbon))
         dist_ribbon = zeros(Float64, length(elt_ribbon))
@@ -300,7 +300,7 @@ module Anisotropy
     function construct_polygon(elt_tip::Vector{Int}, 
                             l_tip::Vector{Float64}, 
                             alpha_tip::Vector{Float64},
-                            mesh::CartesianMesh, 
+                            mesh, 
                             zero_vertex_tip::Vector{Int})
 
         slope = zeros(Float64, length(elt_tip))
@@ -582,7 +582,7 @@ module Anisotropy
     """
     function projection_from_ribbon_LS_gradient(ribbon_elts::Vector{Int}, 
                                             tip_elts::Vector{Int}, 
-                                            mesh::CartesianMesh, 
+                                            mesh, 
                                             sgnd_dist::Vector{Float64})::Vector{Float64}
 
         n_vertex = zeros(Float64, length(tip_elts), 2)
@@ -678,7 +678,7 @@ module Anisotropy
     """
     function find_zero_vertex(Elts::Vector{Int}, 
                             level_set::Vector{Float64}, 
-                            mesh::CartesianMesh)::Vector{Int}
+                            mesh)::Vector{Int}
 
         zero_vertex = zeros(Int, length(Elts))
         
@@ -718,8 +718,8 @@ module Anisotropy
     function get_toughness_from_cellCenter(alpha::Vector{Float64}, 
                                         sgnd_dist::Union{Vector{Float64}, Nothing}=nothing, 
                                         elts::Union{Vector{Int}, Nothing}=nothing, 
-                                        mat_prop::Union{MaterialProperties, Nothing}=nothing, 
-                                        mesh::Union{CartesianMesh, Nothing}=nothing)::Vector{Float64}
+                                        mat_prop=nothing, 
+                                        mesh=nothing)::Vector{Float64}
 
         if mat_prop.anisotropic_K1c
             try
@@ -807,8 +807,8 @@ module Anisotropy
         - `::Vector{Float64}`: toughness values
     """
     function get_toughness_from_zeroVertex(elts::Vector{Int}, 
-                                        mesh::CartesianMesh, 
-                                        mat_prop::MaterialProperties, 
+                                        mesh, 
+                                        mat_prop, 
                                         alpha::Vector{Float64}, 
                                         l::Vector{Float64}, 
                                         zero_vrtx::Vector{Int})::Vector{Float64}

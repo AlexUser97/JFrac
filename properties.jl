@@ -11,7 +11,9 @@ module Properties
     using LoggingExtras
 
     include("common_functions.jl")
-    using .CommonFunctions: locate_element 
+    include("labels.jl")
+    using .CommonFunctions: locate_element
+    using .Labels: var_labels, supported_variables, units, err_msg_variable, unit_conversion, Fig_labels, unidimensional_variables
 
     export MaterialProperties, FluidProperties, InjectionProperties, LoadingProperties, SimulationProperties,
         set_logging_to_file, set_tipAsymptote, get_tipAsymptote, set_viscousInjection, get_viscousInjection, set_volumeControl,
@@ -792,103 +794,102 @@ module Properties
                 init_rate_delayed_second_injpoint_val,
                 check_cell_vertices
             )
+        end
+    end
+
+    # -------------------------------------------------------------------------------------------------------------------
+
+    """
+        get_injection_rate(self, tm, frac)
+
+        This function gives the current injection rate at all of the cells in the domain.
+
+        # Arguments
+        - `self::InjectionProperties`: -- the InjectionProperties object.
+        - `tm::Float64`:               -- the time at which the injection rate is required.
+        - `frac::Fracture`:            -- the Fracture object containing the mesh and the current fracture elements.
+
+        # Returns
+        - `Qin::Vector{Float64}`:      -- a vector of the size of the mesh with injection rates in each of the cell.
+    """
+    function get_injection_rate(self::InjectionProperties, tm::Float64, frac)::Vector{Float64}
+        Qin = zeros(Float64, frac.mesh.NumberOfElts)
+        indxCurTime = maximum(findall(tm .>= self.injectionRate[1, :]))
+        currentRate = self.injectionRate[2, indxCurTime]  # current injection rate
+        currentSource = intersect(self.sourceElem, frac.EltChannel)
+        if length(currentSource) > 0
+            Qin[currentSource] .= currentRate / length(currentSource)
+        end
+
+        return Qin
+    end
+
+    # -------------------------------------------------------------------------------------------------------------------
+
+    """
+        remesh!(self, new_mesh, old_mesh)
+
+        This function is called every time the domain is remeshed.
+
+        # Arguments
+        - `self::InjectionProperties`: -- the InjectionProperties object.
+        - `new_mesh::CartesianMesh`:   -- the CartesianMesh object describing the new coarse mesh.
+        - `old_mesh::CartesianMesh`:   -- the CartesianMesh object describing the old mesh.
+    """
+    function remesh!(self::InjectionProperties, new_mesh, old_mesh)
+        # update source elements according to the new mesh.
+        if self.sourceLocFunc === nothing
+            actv_cells = Set{Int}()
+            for i in self.sourceElem
+                push!(actv_cells, Int(locate_element(new_mesh, old_mesh.CenterCoor[i, 1], old_mesh.CenterCoor[i, 2])))
+            end
+            self.sourceElem = collect(actv_cells)
+        else
+            self.sourceElem = Int[]
+            for i in 1:new_mesh.NumberOfElts
+                if self.sourceLocFunc(new_mesh.CenterCoor[i, 1], new_mesh.CenterCoor[i, 2])
+                    push!(self.sourceElem, i)
+                end
+            end
+        end
+
+        self.sourceCoordinates = Float64[]
+        source_coords_x = Float64[]
+        source_coords_y = Float64[]
+        for elem in self.sourceElem
+            push!(source_coords_x, new_mesh.CenterCoor[elem, 1])
+            push!(source_coords_y, new_mesh.CenterCoor[elem, 2])
+        end
+        self.sourceCoordinates = [mean(source_coords_x), mean(source_coords_y)]
+
+        if self.delayed_second_injpoint_loc_func !== nothing
+            if length(self.sourceElem) == 0
+                self.sourceElem = Int[]
+                self.delayed_second_injpoint_elem = Int[]
+            end
+            for i in 1:new_mesh.NumberOfElts
+                if self.delayed_second_injpoint_loc_func(new_mesh.CenterCoor[i, 1], new_mesh.CenterCoor[i, 2],
+                                                    new_mesh.hx, new_mesh.hy)
+                    push!(self.sourceElem, i)
+                    push!(self.delayed_second_injpoint_elem, i)
+                end
+            end
+        else
+            self.delayed_second_injpoint_elem = nothing
+        end
+
+        if self.sinkLocFunc !== nothing
+            self.sinkElem = Int[]
+            for i in 1:new_mesh.NumberOfElts
+                if self.sinkLocFunc(new_mesh.CenterCoor[i, 1], new_mesh.CenterCoor[i, 2])
+                    push!(self.sinkElem, i)
+                end
             end
 
-            # -------------------------------------------------------------------------------------------------------------------
-
-            """
-                get_injection_rate(self, tm, frac)
-
-            This function gives the current injection rate at all of the cells in the domain.
-
-            # Arguments
-            - `self::InjectionProperties`: -- the InjectionProperties object.
-            - `tm::Float64`:               -- the time at which the injection rate is required.
-            - `frac::Fracture`:            -- the Fracture object containing the mesh and the current fracture elements.
-
-            # Returns
-            - `Qin::Vector{Float64}`:      -- a vector of the size of the mesh with injection rates in each of the cell.
-            """
-            function get_injection_rate(self::InjectionProperties, tm::Float64, frac)::Vector{Float64}
-                Qin = zeros(Float64, frac.mesh.NumberOfElts)
-                indxCurTime = maximum(findall(tm .>= self.injectionRate[1, :]))
-                currentRate = self.injectionRate[2, indxCurTime]  # current injection rate
-                currentSource = intersect(self.sourceElem, frac.EltChannel)
-                if length(currentSource) > 0
-                    Qin[currentSource] .= currentRate / length(currentSource)
-                end
-
-                return Qin
-            end
-
-            # -------------------------------------------------------------------------------------------------------------------
-
-            """
-            remesh!(self, new_mesh, old_mesh)
-
-            This function is called every time the domain is remeshed.
-
-            # Arguments
-            - `self::InjectionProperties`: -- the InjectionProperties object.
-            - `new_mesh::CartesianMesh`:   -- the CartesianMesh object describing the new coarse mesh.
-            - `old_mesh::CartesianMesh`:   -- the CartesianMesh object describing the old mesh.
-            """
-            function remesh!(self::InjectionProperties, new_mesh, old_mesh)
-                # update source elements according to the new mesh.
-                if self.sourceLocFunc === nothing
-                    actv_cells = Set{Int}()
-                    for i in self.sourceElem
-                        push!(actv_cells, Int(locate_element(new_mesh, old_mesh.CenterCoor[i, 1], old_mesh.CenterCoor[i, 2])))
-                    end
-                    self.sourceElem = collect(actv_cells)
-                else
-                    self.sourceElem = Int[]
-                    for i in 1:new_mesh.NumberOfElts
-                        if self.sourceLocFunc(new_mesh.CenterCoor[i, 1], new_mesh.CenterCoor[i, 2])
-                            push!(self.sourceElem, i)
-                        end
-                    end
-                end
-
-                self.sourceCoordinates = Float64[]
-                source_coords_x = Float64[]
-                source_coords_y = Float64[]
-                for elem in self.sourceElem
-                    push!(source_coords_x, new_mesh.CenterCoor[elem, 1])
-                    push!(source_coords_y, new_mesh.CenterCoor[elem, 2])
-                end
-                self.sourceCoordinates = [mean(source_coords_x), mean(source_coords_y)]
-
-                if self.delayed_second_injpoint_loc_func !== nothing
-                    if length(self.sourceElem) == 0
-                        self.sourceElem = Int[]
-                        self.delayed_second_injpoint_elem = Int[]
-                    end
-                    for i in 1:new_mesh.NumberOfElts
-                        if self.delayed_second_injpoint_loc_func(new_mesh.CenterCoor[i, 1], new_mesh.CenterCoor[i, 2],
-                                                            new_mesh.hx, new_mesh.hy)
-                            push!(self.sourceElem, i)
-                            push!(self.delayed_second_injpoint_elem, i)
-                        end
-                    end
-                else
-                    self.delayed_second_injpoint_elem = nothing
-                end
-
-                if self.sinkLocFunc !== nothing
-                    self.sinkElem = Int[]
-                    for i in 1:new_mesh.NumberOfElts
-                        if self.sinkLocFunc(new_mesh.CenterCoor[i, 1], new_mesh.CenterCoor[i, 2])
-                            push!(self.sinkElem, i)
-                        end
-                    end
-
-                    self.sinkVel = Vector{Float64}(undef, length(self.sinkElem))
-                    for i in 1:length(self.sinkElem)
-                        self.sinkVel[i] = self.sinkVelFunc(new_mesh.CenterCoor[self.sinkElem[i], 1],
-                                                        new_mesh.CenterCoor[self.sinkElem[i], 2])
-                    end
-                end
+            self.sinkVel = Vector{Float64}(undef, length(self.sinkElem))
+            for i in 1:length(self.sinkElem)
+                self.sinkVel[i] = self.sinkVelFunc(new_mesh.CenterCoor[self.sinkElem[i], 1],
+                                                new_mesh.CenterCoor[self.sinkElem[i], 2])
             end
         end
     end
@@ -1098,10 +1099,10 @@ module Properties
         # time and time stepping
         maxTimeSteps::Int
         tmStpPrefactor::Float64
-        finalTime::Union{Float64, Nothing}
-        __solTimeSeries::Union{Vector{Float64}, Nothing}
-        timeStepLimit::Union{Float64, Nothing}
-        fixedTmStp::Union{Matrix{Float64}, Float64, Nothing}
+        finalTime::Float64
+        solTimeSeries::Vector{Float64}
+        timeStepLimit::Float64
+        fixedTmStp::Union{Nothing, Vector{Float64}}
 
         # time step re-attempt
         maxReattempts::Int
@@ -1111,45 +1112,41 @@ module Properties
         # output parameters
         plotFigure::Bool
         plotAnalytical::Bool
-        analyticalSol::Union{String, Nothing}
-        __simName::Union{String, Nothing}
-        __outputAddress::Union{String, Nothing}
-        __outputFolder::String
+        analyticalSol::String
+        simName::String
+        outputAddress::String
         saveToDisk::Bool
-        bckColor::Union{String, Nothing}
+        bckColor::String
         blockFigure::Bool
         plotTSJump::Int
-        plotTimePeriod::Union{Float64, Nothing}
+        plotTimePeriod::Float64
         plotVar::Vector{String}
         saveTSJump::Int
-        saveTimePeriod::Union{Float64, Nothing}
+        saveTimePeriod::Float64
         plotATsolTimeSeries::Bool
 
         # solver type
         elastohydrSolver::String
         Anderson_parameter::Int
         relaxation_factor::Float64
-        __dryCrack_mechLoading::Bool
-        __viscousInjection::Bool
-        __volumeControl::Bool
+        dryCrack_mechLoading::Bool
+        viscousInjection::Bool
+        volumeControl::Bool
         substitutePressure::Bool
         solveDeltaP::Bool
         solveStagnantTip::Bool
         solveTipCorrRib::Bool
-        solveSparse::Union{Bool, Nothing}
-
-        # miscellaneous
+        solveSparse::Bool
         useBlockToeplizCompression::Bool
-        verbositylevel::String
+        verbosity::String
         log2file::Bool
-        __tipAsymptote::String
+        tipAsymptote::String
         saveRegime::Bool
         enableRemeshing::Bool
         remeshFactor::Float64
-
         meshExtension::Vector{Bool}
-        meshExtensionFactor::Vector{Float64}
-        meshExtensionAllDir::Bool
+        meshExtensionFactor::Float64
+        meshExtendAllDir::Bool
         maxElementIn::Float64
         maxCellSize::Float64
         meshReductionFactor::Float64
@@ -1176,184 +1173,145 @@ module Properties
         projMethod::String
         enableGPU::Bool
         nThreads::Int
-
-        # fracture geometry to calculate analytical solution for plotting
-        height::Union{Float64, Nothing}
-        aspectRatio::Union{Float64, Nothing}
-
-        # parameter deciding to save the leak-off tip parameter
+        height::Float64
+        aspectRatio::Float64
         saveChi::Bool
+        roughness_model::String
+        roughness_sigma::Float64
+        refernce_time::Float64
 
-        # roughness parameters
-        roughness_model::Union{String, Nothing}
-        roughness_sigma::Union{Float64, Nothing}
-
-        __timeStamp::String
-
-        """
-            SimulationProperties(address=nothing)
-
-            The constructor of the SimulationProperties class. See documentation of the class.
-        """
-        function SimulationProperties(address::Union{String, Nothing}=nothing)
-
-            param_module = if address === nothing
-                default_parameters
-            else
-                user_module = Module(:UserSimParams)
-                full_path = joinpath(address, "simul_param.jl") 
-                try
-                    Base.include(user_module, full_path)
-                    user_module
-                catch e
-                    @error "Failed to load parameters from $full_path" exception=(e, catch_backtrace())
-                    @info "Falling back to default parameters"
-                    default_parameters
-                end
-            end
-
-            timestamp = string(Dates.now())
-
-            sim_prop = new(
-                # tolerances
-                param_module.toleranceFractureFront,
-                param_module.toleranceEHL,
-                param_module.tol_projection,
-                param_module.toleranceVStagnant,
-                param_module.Hersh_Bulk_epsilon,
-                param_module.Hersh_Bulk_Gmin,
-
-                # max iterations
-                param_module.max_front_itrs,
-                param_module.max_solver_itrs,
-                param_module.max_proj_Itrs,
-
-                # time and time stepping
-                param_module.maximum_steps,
-                param_module.tmStp_prefactor,
-                param_module.final_time, # Union{Float64, Nothing}
-                param_module.req_sol_at, # Union{Vector{Float64}, Nothing}
-                param_module.timeStep_limit, # Union{Float64, Nothing}
-                param_module.fixed_time_step, # Union{Matrix{Float64}, Float64, Nothing}
-
-                # time step re-attempt
-                param_module.max_reattemps,
-                param_module.reattempt_factor,
-                param_module.max_reattemps_FracAdvMore2Cells,
-
-                # output parameters
-                param_module.plot_figure,
-                param_module.plot_analytical,
-                param_module.analytical_sol, # Union{String, Nothing}
-                param_module.sim_name, # Union{String, Nothing}
-                param_module.output_folder, # Union{String, Nothing}
-                "",
-                param_module.save_to_disk,
-                param_module.bck_color, # Union{String, Nothing}
-                param_module.block_figure,
-                param_module.plot_TS_jump,
-                param_module.plot_time_period, # Union{Float64, Nothing}
-                param_module.plot_var,
-                param_module.save_TS_jump,
-                param_module.save_time_period, # Union{Float64, Nothing}
-                param_module.plot_at_sol_time_series,
-
-                # solver type
-                param_module.elastohydr_solver,
-                param_module.m_Anderson,
-                param_module.relaxation_param,
-                param_module.mech_loading,
-                param_module.viscous_injection,
-                param_module.volume_control,
-                param_module.substitute_pressure,
-                param_module.solve_deltaP,
-                param_module.solve_stagnant_tip,
-                param_module.solve_tip_corr_rib,
-                param_module.solve_sparse, # Union{Bool, Nothing}
-
-                # miscellaneous
-                param_module.use_block_toepliz_compression,
-                param_module.verbosity_level,
-                param_module.log_to_file,
-                param_module.tip_asymptote,
-                param_module.save_regime,
-                param_module.enable_remeshing,
-                param_module.remesh_factor,
-
-                param_module.mesh_extension_direction, # Vector{Bool}
-                param_module.mesh_extension_factor, # Vector{Float64}
-                param_module.mesh_extension_all_sides,
-                Inf, # maxElementIn
-                Inf, # maxCellSize
-                param_module.mesh_reduction_factor,
-                true, # meshReductionPossible
-                param_module.limit_Adancement_To_2_cells,
-                param_module.force_time_step_limit_and_max_adv_to_2_cells,
-                param_module.front_advancing,
-                param_module.collect_perf_data,
-                param_module.param_from_tip,
-                param_module.save_ReyNumb,
-                param_module.gravity,
-                param_module.TI_Kernel_exec_path,
-                param_module.save_fluid_flux,
-                param_module.save_fluid_vel,
-                param_module.save_fluid_flux_as_vector,
-                param_module.save_fluid_vel_as_vector,
-                param_module.save_effective_viscosity,
-                param_module.save_statistics_post_coalescence,
-                param_module.save_yield_ratio,
-                param_module.save_G,
-                param_module.explicit_projection,
-                param_module.symmetric,
-                param_module.double_fracture_vol_contr,
-                param_module.proj_method,
-                param_module.enable_GPU,
-                param_module.n_threads,
-
-                # fracture geometry
-                param_module.height, # Union{Float64, Nothing}
-                param_module.aspect_ratio, # Union{Float64, Nothing}
-
-                # parameter deciding to save the leak-off tip parameter
-                param_module.save_chi,
-
-                # roughness parameters
-                param_module.roughness_model, # Union{String, Nothing}
-                param_module.roughness_sigma, # Union{Float64, Nothing}
-                
-                timestamp # __timeStamp
+        function SimulationProperties(address::Union{Nothing, String} = nothing)
+            include(address === nothing ? "default_parameters.jl" : joinpath(address, "default_parameters.jl"))
+            default_props = DefaultParameters
+            new(
+                default_props.toleranceFractureFront,
+                default_props.toleranceEHL,
+                default_props.tol_projection,
+                default_props.toleranceVStagnant,
+                default_props.Hersh_Bulk_epsilon,
+                default_props.Hersh_Bulk_Gmin,
+                default_props.max_front_itrs,
+                default_props.max_solver_itrs,
+                default_props.max_proj_Itrs,
+                default_props.maximum_steps,
+                default_props.tmStp_prefactor,
+                default_props.final_time,
+                default_props.req_sol_at,
+                default_props.timeStep_limit,
+                default_props.fixed_time_step,
+                default_props.max_reattemps,
+                default_props.reattempt_factor,
+                default_props.max_reattemps_FracAdvMore2Cells,
+                default_props.plot_figure,
+                default_props.plot_analytical,
+                default_props.analytical_sol,
+                default_props.sim_name,
+                default_props.output_folder,
+                default_props.save_to_disk,
+                default_props.bck_color,
+                default_props.block_figure,
+                default_props.plot_TS_jump,
+                default_props.plot_time_period,
+                default_props.plot_var,
+                default_props.save_TS_jump,
+                default_props.save_time_period,
+                default_props.plot_at_sol_time_series,
+                default_props.elastohydr_solver,
+                default_props.m_Anderson,
+                default_props.relaxation_param,
+                default_props.mech_loading,
+                default_props.viscous_injection,
+                default_props.volume_control,
+                default_props.substitute_pressure,
+                default_props.solve_deltaP,
+                default_props.solve_stagnant_tip,
+                default_props.solve_tip_corr_rib,
+                default_props.solve_sparse,
+                default_props.use_block_toepliz_compression,
+                default_props.verbosity_level,
+                default_props.log_to_file,
+                default_props.tip_asymptote,
+                default_props.save_regime,
+                default_props.enable_remeshing,
+                default_props.remesh_factor,
+                default_props.mesh_extension_direction,
+                default_props.mesh_extension_factor,
+                default_props.mesh_extension_all_sides,
+                Inf,
+                Inf,
+                default_props.mesh_reduction_factor,
+                true,
+                default_props.limit_Adancement_To_2_cells,
+                default_props.force_time_step_limit_and_max_adv_to_2_cells,
+                default_props.front_advancing,
+                default_props.collect_perf_data,
+                default_props.param_from_tip,
+                default_props.save_ReyNumb,
+                default_props.gravity,
+                default_props.TI_Kernel_exec_path,
+                default_props.save_fluid_flux,
+                default_props.save_fluid_vel,
+                default_props.save_fluid_flux_as_vector,
+                default_props.save_fluid_vel_as_vector,
+                default_props.save_effective_viscosity,
+                default_props.save_statistics_post_coalescence,
+                default_props.save_yield_ratio,
+                default_props.save_G,
+                default_props.explicit_projection,
+                default_props.symmetric,
+                default_props.double_fracture_vol_contr,
+                default_props.proj_method,
+                default_props.enable_GPU,
+                default_props.n_threads,
+                default_props.height,
+                default_props.aspect_ratio,
+                default_props.save_chi,
+                default_props.roughness_model,
+                default_props.roughness_sigma,
+                default_props.reference_time
             )
-
-            # --- Validation ---
-            if sim_prop.fixedTmStp !== nothing && isa(sim_prop.fixedTmStp, Matrix{Float64})
-                if size(sim_prop.fixedTmStp, 1) != 2
-                    error("Invalid fixed time step. The list should have 2 rows (to specify time and " *
-                        "corresponding time step) for each entry")
-                end
-            end
-
-            if sim_prop.paramFromTip
-                error("Parameters from tip not yet supported!")
-            end
-
-            if !(sim_prop.projMethod in ["ILSA_orig", "LS_grad", "LS_continousfront"])
-                error("Projection method is not recognised!")
-            end
-
-            if sim_prop.projMethod != "LS_continousfront" && sim_prop.doublefracture
-                error("You set the option doublefracture=True but\n " *
-                    "The volume control solver has been implemented \n" *
-                    "only with the option projMethod==LS_continousfront activated")
-            end
-
-            return sim_prop
         end
     end
 
     # ----------------------------------------------------------------------------------------------------------------------
-    
-    function set_logging_to_file(self::SimulationProperties, address::String, verbosity_level::Union{String, Nothing}=nothing)
+    """
+        This function sets up the log, both to the file and to the file
+        Note: from any module in the code you can use the logging capabilities. You just have to:
 
+        1) import the module
+
+        2) create a child of the logger named 'JFrac' defined in this function. Use a pertinent name as 'Jfrac.frontrec'
+
+        logger1 = logging.getLogger('JFrac.frontrec')
+
+        3) use the object to send messages in the module, such as
+
+        logger1.debug('debug message')
+        logger1.info('info message')
+        logger1.warning('warn message')
+        logger1.error('error message')
+        logger1.critical('critical message')
+
+        4) IMPORTANT TO KNOW:
+        1-If you want to log only to the file in the abobe example you have to use: logger1 = logging.getLogger('JFrac_LF.frontrec')
+        2-SystemExit and KeyboardInterrupt exceptions are never swallowed by the logging package .
+
+        :param         address: string that defines the location where to save the log file
+        :param verbosity_level: string that defines the level of logging concerning the file:
+                                    'debug'    - Detailed information, typically of interest only when diagnosing problems.
+                                    'info'     - Confirmation that things are working as expected.
+                                    'warning'  - An indication that something unexpected happened, or indicative of some
+                                                problem in the near future (e.g. disk space low). The software is still
+                                                working as expected.
+                                    'error'    - Due to a more serious problem, the software has not been able to perform
+                                                some function.
+                                    'critical' - A serious error, indicating that the program itself may be unable to
+                                                continue running.
+
+        :return: -
+    """
+    function set_logging_to_file(self::SimulationProperties, address::String, verbosity_level::Union{String, Nothing}=nothing)
+        
         level_str = something(verbosity_level, self.verbositylevel)
         
         file_level = if level_str == "debug"
@@ -1371,26 +1329,38 @@ module Properties
             Logging.Info
         end
 
-
         slash = Sys.iswindows() ? "\\" : "/"
         log_dir = endswith(address, slash) ? address : address * slash
-        log_file_path = log_dir * "PyFrac_log.txt"
+        log_file_path = log_dir * "JFrac_log.txt"
         
         try
             log_io = open(log_file_path, "w")
-            file_logger = FileLogger(log_io)
+            
+            # Создание форматированного логгера
+            formatted_logger = FormatLogger(log_io) do io, args
+                timestamp = Dates.format(now(), "mm-dd-yy HH:MM")
+                level = string(args.level)
+                name = get(args.kwargs, :_group, "PyFrac")
+                msg = args.message
+                print(io, "$timestamp $name        $level    $msg\n")
+            end
+            
+            # Фильтр для PyFrac логов
             pyfrac_filtered_logger = EarlyFilteredLogger(
                 (log_args) -> begin
-                    group_name = getfield(log_args.group, :name)
+                    group_name = get(log_args.kwargs, :_group, "")
                     startswith(string(group_name), "PyFrac")
                 end,
-                file_logger
+                formatted_logger
             )
             
+            # Фильтр по уровню
             min_level_logger = MinLevelLogger(file_level, pyfrac_filtered_logger)
+            
             current_console_logger = global_logger()
             tee_logger = TeeLogger(current_console_logger, min_level_logger)
             global_logger(tee_logger)
+            
             self.log2file = true
             @info "Log file set up" _group="PyFrac.general"
             
@@ -1401,7 +1371,6 @@ module Properties
         
         return nothing
     end
-
     # ----------------------------------------------------------------------------------------------------------------------
     # setter and getter functions
 
@@ -1694,76 +1663,76 @@ module Properties
         widthConstraintItr_data::Vector{IterationProperties}
         linearSolve_data::Vector{IterationProperties}
         RKL_data::Vector{IterationProperties}
-    end
 
-    """
-        IterationProperties(itr_type="not initialized")
+        """
+            IterationProperties(itr_type="not initialized")
 
-        Constructor for IterationProperties.
-    """
-    function IterationProperties(itr_type::String="not initialized")
-        # Initialize all sub-iteration data vectors as empty
-        attempts_data = IterationProperties[]
-        sameFront_data = IterationProperties[]
-        extendedFront_data = IterationProperties[]
-        tipInv_data = IterationProperties[]
-        tipWidth_data = IterationProperties[]
-        nonLinSolve_data = IterationProperties[]
-        brentMethod_data = IterationProperties[]
-        widthConstraintItr_data = IterationProperties[]
-        linearSolve_data = IterationProperties[]
-        RKL_data = IterationProperties[]
-        
-        # Initialize sub-iterations data based on itr_type
-        if itr_type == "time step"
+            Constructor for IterationProperties.
+        """
+        function IterationProperties(itr_type::String="not initialized")
+            # Initialize all sub-iteration data vectors as empty
             attempts_data = IterationProperties[]
-        elseif itr_type == "time step attempt"
             sameFront_data = IterationProperties[]
             extendedFront_data = IterationProperties[]
-        elseif itr_type == "same front"
-            nonLinSolve_data = IterationProperties[]
-        elseif itr_type == "extended front"
             tipInv_data = IterationProperties[]
             tipWidth_data = IterationProperties[]
             nonLinSolve_data = IterationProperties[]
-        elseif itr_type == "tip inversion"
             brentMethod_data = IterationProperties[]
-        elseif itr_type == "tip width"
-            brentMethod_data = IterationProperties[]
-        elseif itr_type == "nonlinear system solve"
             widthConstraintItr_data = IterationProperties[]
-        elseif itr_type == "width constraint iteration"
             linearSolve_data = IterationProperties[]
             RKL_data = IterationProperties[]
-        elseif itr_type == "linear system solve"
-            # No sub-iteration data
-        elseif itr_type == "Brent method"
-            # No sub-iteration data
-        else
-            error("The given iteration type is not supported!")
+            
+            # Initialize sub-iterations data based on itr_type
+            if itr_type == "time step"
+                attempts_data = IterationProperties[]
+            elseif itr_type == "time step attempt"
+                sameFront_data = IterationProperties[]
+                extendedFront_data = IterationProperties[]
+            elseif itr_type == "same front"
+                nonLinSolve_data = IterationProperties[]
+            elseif itr_type == "extended front"
+                tipInv_data = IterationProperties[]
+                tipWidth_data = IterationProperties[]
+                nonLinSolve_data = IterationProperties[]
+            elseif itr_type == "tip inversion"
+                brentMethod_data = IterationProperties[]
+            elseif itr_type == "tip width"
+                brentMethod_data = IterationProperties[]
+            elseif itr_type == "nonlinear system solve"
+                widthConstraintItr_data = IterationProperties[]
+            elseif itr_type == "width constraint iteration"
+                linearSolve_data = IterationProperties[]
+                RKL_data = IterationProperties[]
+            elseif itr_type == "linear system solve"
+                # No sub-iteration data
+            elseif itr_type == "Brent method"
+                # No sub-iteration data
+            else
+                error("The given iteration type is not supported!")
+            end
+            
+            return new(
+                0,  # iterations
+                nothing,  # norm
+                itr_type,  # itrType
+                nothing,  # time
+                Dates.time(),
+                nothing,  # CpuTime_end
+                nothing,  # status
+                nothing,  # failure_cause
+                nothing,  # NumbOfElts
+                attempts_data,
+                sameFront_data,
+                extendedFront_data,
+                tipInv_data,
+                tipWidth_data,
+                nonLinSolve_data,
+                brentMethod_data,
+                widthConstraintItr_data,
+                linearSolve_data,
+                RKL_data
+            )
         end
-        
-        return IterationProperties(
-            0,  # iterations
-            nothing,  # norm
-            itr_type,  # itrType
-            nothing,  # time
-            Dates.time(),
-            nothing,  # CpuTime_end
-            nothing,  # status
-            nothing,  # failure_cause
-            nothing,  # NumbOfElts
-            attempts_data,
-            sameFront_data,
-            extendedFront_data,
-            tipInv_data,
-            tipWidth_data,
-            nonLinSolve_data,
-            brentMethod_data,
-            widthConstraintItr_data,
-            linearSolve_data,
-            RKL_data
-        )
     end
 
     # -----------------------------------------------------------------------------------------------------------------------
@@ -1873,90 +1842,90 @@ module Properties
         useTex::Bool
         colorMaps::Vector{String}
         colorsList::Vector{String}
-    end
 
-    """
-        PlotProperties(; color_map=nothing, line_color=nothing, line_style="-", line_width=1.0, line_style_anal="--",
-                    line_color_anal="r", interpolation="none", alpha=0.8, line_width_anal=nothing, text_size=nothing,
-                    disp_precision=3, mesh_color="yellowgreen", mesh_edge_color="grey", mesh_label_color="black",
-                    graph_scaling="linear", color_maps=nothing, colors_list=nothing, plot_legend=true, plot_FP_time=true,
-                    use_tex=false)
+        """
+            PlotProperties(; color_map=nothing, line_color=nothing, line_style="-", line_width=1.0, line_style_anal="--",
+                        line_color_anal="r", interpolation="none", alpha=0.8, line_width_anal=nothing, text_size=nothing,
+                        disp_precision=3, mesh_color="yellowgreen", mesh_edge_color="grey", mesh_label_color="black",
+                        graph_scaling="linear", color_maps=nothing, colors_list=nothing, plot_legend=true, plot_FP_time=true,
+                        use_tex=false)
 
-        Constructor for PlotProperties.
-    """
-    function PlotProperties(color_map::Union{String, Nothing}=nothing, 
-                        line_color::Union{String, Tuple, Nothing}=nothing, 
-                        line_style::String="-", 
-                        line_width::Float64=1.0, 
-                        line_style_anal::String="--",
-                        line_color_anal::String="r", 
-                        interpolation::String="none", 
-                        alpha::Float64=0.8, 
-                        line_width_anal::Union{Float64, Nothing}=nothing, 
-                        text_size::Union{Float64, Nothing}=nothing,
-                        disp_precision::Int=3, 
-                        mesh_color::String="yellowgreen", 
-                        mesh_edge_color::String="grey", 
-                        mesh_label_color::String="black",
-                        graph_scaling::String="linear", 
-                        color_maps::Union{Vector{String}, Nothing}=nothing, 
-                        colors_list::Union{Vector{String}, Nothing}=nothing, 
-                        plot_legend::Bool=true, 
-                        plot_FP_time::Bool=true,
-                        use_tex::Bool=false)
-        
-        # Handle color_maps
-        if color_maps === nothing
-            colorMaps_val = ["cool", "Wistia", "summer", "autumn"]
-        else
-            colorMaps_val = color_maps
+            Constructor for PlotProperties.
+        """
+        function PlotProperties(color_map::Union{String, Nothing}=nothing, 
+                            line_color::Union{String, Tuple, Nothing}=nothing, 
+                            line_style::String="-", 
+                            line_width::Float64=1.0, 
+                            line_style_anal::String="--",
+                            line_color_anal::String="r", 
+                            interpolation::String="none", 
+                            alpha::Float64=0.8, 
+                            line_width_anal::Union{Float64, Nothing}=nothing, 
+                            text_size::Union{Float64, Nothing}=nothing,
+                            disp_precision::Int=3, 
+                            mesh_color::String="yellowgreen", 
+                            mesh_edge_color::String="grey", 
+                            mesh_label_color::String="black",
+                            graph_scaling::String="linear", 
+                            color_maps::Union{Vector{String}, Nothing}=nothing, 
+                            colors_list::Union{Vector{String}, Nothing}=nothing, 
+                            plot_legend::Bool=true, 
+                            plot_FP_time::Bool=true,
+                            use_tex::Bool=false)
+            
+            # Handle color_maps
+            if color_maps === nothing
+                colorMaps_val = ["cool", "Wistia", "summer", "autumn"]
+            else
+                colorMaps_val = color_maps
+            end
+            
+            # Handle colors_list
+            if colors_list === nothing
+                colorsList_val = ["black", "firebrick", "olivedrab", "royalblue", "deeppink", "darkmagenta"]
+            else
+                colorsList_val = colors_list
+            end
+            
+            # Handle lineColor
+            if line_color === nothing
+                lineColor_val = to_rgb(colorsList_val[1])
+            else
+                lineColor_val = line_color
+                colorsList_val = [string(line_color)]
+            end
+            
+            # Handle colorMap
+            if color_map === nothing
+                colorMap_val = colorMaps_val[1]
+            else
+                colorMap_val = color_map
+                colorMaps_val = [color_map]
+            end
+            
+            return new(
+                line_style,
+                line_width,
+                lineColor_val,
+                colorMap_val,
+                line_color_anal,
+                line_style_anal,
+                line_width_anal,
+                text_size,
+                disp_precision,
+                mesh_color,
+                mesh_edge_color,
+                mesh_label_color,
+                interpolation,
+                alpha,
+                graph_scaling,
+                plot_legend,
+                plot_FP_time,
+                use_tex,
+                colorMaps_val,
+                colorsList_val
+            )
         end
-        
-        # Handle colors_list
-        if colors_list === nothing
-            colorsList_val = ["black", "firebrick", "olivedrab", "royalblue", "deeppink", "darkmagenta"]
-        else
-            colorsList_val = colors_list
-        end
-        
-        # Handle lineColor
-        if line_color === nothing
-            lineColor_val = to_rgb(colorsList_val[1])
-        else
-            lineColor_val = line_color
-            colorsList_val = [string(line_color)]
-        end
-        
-        # Handle colorMap
-        if color_map === nothing
-            colorMap_val = colorMaps_val[1]
-        else
-            colorMap_val = color_map
-            colorMaps_val = [color_map]
-        end
-        
-        return PlotProperties(
-            line_style,
-            line_width,
-            lineColor_val,
-            colorMap_val,
-            line_color_anal,
-            line_style_anal,
-            line_width_anal,
-            text_size,
-            disp_precision,
-            mesh_color,
-            mesh_edge_color,
-            mesh_label_color,
-            interpolation,
-            alpha,
-            graph_scaling,
-            plot_legend,
-            plot_FP_time,
-            use_tex,
-            colorMaps_val,
-            colorsList_val
-        )
     end
     # -----------------------------------------------------------------------------------------------------------------------
 
@@ -1970,89 +1939,89 @@ module Properties
         xLabel::String
         zLabel::String
         colorbarLabel::String
-        units::String
+        units_val::String
         unitConversion::Float64
         figLabel::String
         legend::String
         useLatex::Bool
-    end
 
-    """
-        LabelProperties(variable, data_subset="whole mesh", projection="2D", use_latex=true)
+        """
+            LabelProperties(variable, data_subset="whole mesh", projection="2D", use_latex=true)
 
-        Constructor for LabelProperties.
+            Constructor for LabelProperties.
 
-        # Arguments
-        - `variable::String`: The variable to be plotted.
-        - `data_subset::String`: The data subset to be plotted. Options are:
-                                - "whole mesh" or "wm"
-                                - "slice" or "s"  
-                                - "point" or "p"
-        - `projection::String`: The type of projection. Options are:
-                                - "2D_clrmap", "2D_contours", "2D_vectorfield", "3D", "2D" for 2D projections
-                                - "1D" for 1D projection
-        - `use_latex::Bool`: Whether to use LaTeX formatting.
-    """
-    function LabelProperties(variable::String, data_subset::String="whole mesh", projection::String="2D", use_latex::Bool=true)
-        if !(variable in supported_variables)
-            error(err_msg_variable)
-        end
-        
-        if variable in unidimensional_variables
-            projection = "1D"
-        end
-        
-        yLabel_val = ""
-        xLabel_val = ""
-        zLabel_val = ""
-        colorbarLabel_val = ""
-        units_val = ""
-        unitConversion_val = 0.0
-        figLabel_val = ""
-        legend_val = ""
-        useLatex_val = use_latex
-        
-        if data_subset in ("whole mesh", "wm")
-            if projection in ("2D_clrmap", "2D_contours", "2D_vectorfield", "3D", "2D")
-                yLabel_val = "meters"
-                xLabel_val = "meters"
-                zLabel_val = var_labels[variable] * units[variable]
-            elseif projection == "1D"
+            # Arguments
+            - `variable::String`: The variable to be plotted.
+            - `data_subset::String`: The data subset to be plotted. Options are:
+                                    - "whole mesh" or "wm"
+                                    - "slice" or "s"  
+                                    - "point" or "p"
+            - `projection::String`: The type of projection. Options are:
+                                    - "2D_clrmap", "2D_contours", "2D_vectorfield", "3D", "2D" for 2D projections
+                                    - "1D" for 1D projection
+            - `use_latex::Bool`: Whether to use LaTeX formatting.
+        """
+        function LabelProperties(variable::String, data_subset::String="whole mesh", projection::String="2D", use_latex::Bool=true)
+            if !(variable in supported_variables)
+                error(err_msg_variable)
+            end
+            
+            if variable in unidimensional_variables
+                projection = "1D"
+            end
+            
+            yLabel_val = ""
+            xLabel_val = ""
+            zLabel_val = ""
+            colorbarLabel_val = ""
+            units_val = ""
+            unitConversion_val = 0.0
+            figLabel_val = ""
+            legend_val = ""
+            useLatex_val = use_latex
+            
+            if data_subset in ("whole mesh", "wm")
+                if projection in ("2D_clrmap", "2D_contours", "2D_vectorfield", "3D", "2D")
+                    yLabel_val = "meters"
+                    xLabel_val = "meters"
+                    zLabel_val = var_labels[variable] * units[variable]
+                elseif projection == "1D"
+                    xLabel_val = "time (s)"
+                    yLabel_val = var_labels[variable] * units[variable]
+                end
+            elseif data_subset in ("slice", "s")
+                if occursin("2D", projection)
+                    xLabel_val = "meters"
+                    yLabel_val = var_labels[variable] * units[variable]
+                elseif projection == "3D"
+                    yLabel_val = "meters"
+                    xLabel_val = "meters"
+                    zLabel_val = var_labels[variable] * units[variable]
+                end
+            elseif data_subset in ("point", "p")
                 xLabel_val = "time (s)"
                 yLabel_val = var_labels[variable] * units[variable]
             end
-        elseif data_subset in ("slice", "s")
-            if occursin("2D", projection)
-                xLabel_val = "meters"
-                yLabel_val = var_labels[variable] * units[variable]
-            elseif projection == "3D"
-                yLabel_val = "meters"
-                xLabel_val = "meters"
-                zLabel_val = var_labels[variable] * units[variable]
-            end
-        elseif data_subset in ("point", "p")
-            xLabel_val = "time (s)"
-            yLabel_val = var_labels[variable] * units[variable]
+            
+            colorbarLabel_val = var_labels[variable] * units[variable]
+            units_val = units[variable]
+            unitConversion_val = unit_conversion[variable]
+            figLabel_val = Fig_labels[variable]
+            legend_val = var_labels[variable]
+            useLatex_val = use_latex
+            
+            return new(
+                yLabel_val,
+                xLabel_val,
+                zLabel_val,
+                colorbarLabel_val,
+                units_val,
+                unitConversion_val,
+                figLabel_val,
+                legend_val,
+                useLatex_val
+            )
         end
-        
-        colorbarLabel_val = var_labels[variable] * units[variable]
-        units_val = units[variable]
-        unitConversion_val = unit_conversion[variable]
-        figLabel_val = Fig_labels[variable]
-        legend_val = var_labels[variable]
-        useLatex_val = use_latex
-        
-        return new(
-            yLabel_val,
-            xLabel_val,
-            zLabel_val,
-            colorbarLabel_val,
-            units_val,
-            unitConversion_val,
-            figLabel_val,
-            legend_val,
-            useLatex_val
-        )
     end
 
 end # module Properties
