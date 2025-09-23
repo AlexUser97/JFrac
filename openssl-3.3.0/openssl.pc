@@ -1,0 +1,7 @@
+libdir=/mnt/c/Users/user1/Desktop/src/openssl-3.3.0
+includedir=/mnt/c/Users/user1/Desktop/src/openssl-3.3.0/include
+
+Name: OpenSSL
+Description: Secure Sockets Layer and cryptography libraries and tools
+Version: 3.3.0
+Requires: libssl libcrypto

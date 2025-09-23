@@ -9,7 +9,7 @@ module ContinuousFrontReconstruction
     include("properties.jl")
     include("level_set.jl")
     using .Properties: PlotProperties
-    using .LevelSet: 
+    using .LevelSet: SolveFMM
     using PyPlot
     import PyPlot: plotgrid
     using LinearAlgebra
@@ -469,13 +469,6 @@ module ContinuousFrontReconstruction
         elseif length(common) > 1
             """
             situations with two common elements:
-            |      |                  |      |           |      |
-            ___|______|____           ___*======*====    ___|_*____*____
-            |      |                 ||      |           |/     |\        
-            ___*______*____           ___*______|___     ___/______|_\__
-            |      |                 ||      |          /|      |  \  
-            ___|______|____           __||______|____    _/_|______|___\___
-            |      |                 ||      |           |      |
             In this situation take the i with LS<0 as tip
             (...if you choose LS>0 as tip you will not find zero vertexes then...)
             """
@@ -3712,8 +3705,7 @@ module ContinuousFrontReconstruction
             yinters4all_closed_paths_1 = itertools_chain_from_iterable(yinters4all_closed_paths_1)
             yinters4all_closed_paths_2 = itertools_chain_from_iterable(yinters4all_closed_paths_2)
             
-            if length(xinters4all_closed_paths_1) == length(yinters4all_closed_paths_1) == 
-            length(xinters4all_closed_paths_2) == length(yinters4all_closed_paths_2)
+            if length(xinters4all_closed_paths_1) == length(yinters4all_closed_paths_1) == length(xinters4all_closed_paths_2) == length(yinters4all_closed_paths_2)
                 Ffront = hcat(xinters4all_closed_paths_1, yinters4all_closed_paths_1, 
                             xinters4all_closed_paths_2, yinters4all_closed_paths_2)
             else
@@ -3902,17 +3894,17 @@ module ContinuousFrontReconstruction
             # plot = plot_cell_lists(mesh, EltChannel_k, fig=plot, mycolor="g", mymarker="_", shiftx=0.01, shifty=0.01,
             #                        annotate_cellName=false, grid=true)
             message = """FRONT RECONSTRUCTION ERROR: 
-        the source of this error can be found because of two reasons. 
-        1)The first reason is that the front is entering more than 1 time the same cell 
-        2)The second reason is more in depth in how the scheme works.
-            If one fracture front is receding because of an artificial deletion of points at the front then
-            some of the tip elements they will became channel element of the previous time step. 
+            the source of this error can be found because of two reasons. 
+            1)The first reason is that the front is entering more than 1 time the same cell 
+            2)The second reason is more in depth in how the scheme works.
+                If one fracture front is receding because of an artificial deletion of points at the front then
+                some of the tip elements they will became channel element of the previous time step. 
 
-        >>> You can solve this problem by refining more the mesh. <<<
+            >>> You can solve this problem by refining more the mesh. <<<
 
-        PS: After removing a point, the LevelSet is recomputed by assuming the distance  
-        to the reconstructed front.This might result in a numerical recession of the front 
-        but at worst it can be detected and solved by spatial or temporal refinement."""
+            PS: After removing a point, the LevelSet is recomputed by assuming the distance  
+            to the reconstructed front.This might result in a numerical recession of the front 
+            but at worst it can be detected and solved by spatial or temporal refinement."""
             error(message)
         end
 

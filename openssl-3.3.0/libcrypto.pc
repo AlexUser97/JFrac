@@ -1,0 +1,11 @@
+libdir=/mnt/c/Users/user1/Desktop/src/openssl-3.3.0
+includedir=/mnt/c/Users/user1/Desktop/src/openssl-3.3.0/include
+enginesdir=/mnt/c/Users/user1/Desktop/src/openssl-3.3.0/engines
+modulesdir=/mnt/c/Users/user1/Desktop/src/openssl-3.3.0/providers
+
+Name: OpenSSL-libcrypto
+Description: OpenSSL cryptography library
+Version: 3.3.0
+Libs: -L${libdir} -lcrypto
+Libs.private: -ldl -pthread
+Cflags: -I${includedir}
