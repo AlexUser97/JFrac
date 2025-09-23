@@ -109,7 +109,8 @@ module Mesh
 
         function CartesianMesh(Lx::Float64, Ly::Float64, nx::Int, ny::Int, symmetric::Bool=false)
             
-            @info "Creating mesh..." _group="PyFrac.mesh"
+            log = "JFrac.mesh"
+            @info "Creating mesh..." _group=log
 
             if isa(Lx, Number)
                 Lx_val = Float64(Lx)
@@ -130,12 +131,12 @@ module Mesh
             domainLimits = [ylims[1], ylims[2], xlims[1], xlims[2]]
 
             if nx % 2 == 0
-                @warn "Number of elements in x-direction are even. Using $(nx+1) elements to have origin at a cell center..." _group="PyFrac.mesh"
+                @warn "Number of elements in x-direction are even. Using $(nx+1) elements to have origin at a cell center..." _group=log
                 nx += 1
             end
 
             if ny % 2 == 0
-                @warn "Number of elements in y-direction are even. Using $(ny+1) elements to have origin at a cell center..." _group="PyFrac.mesh"
+                @warn "Number of elements in y-direction are even. Using $(ny+1) elements to have origin at a cell center..." _group=log
                 ny += 1
             end
 
@@ -561,7 +562,7 @@ module Mesh
 
             if length(CenterElts) != 1
                 CenterElts = Int(NumberOfElts / 2)
-                @debug "Mesh with no center element. To be looked into" _group="PyFrac.mesh"
+                @debug "Mesh with no center element. To be looked into" _group=log
                 # throw(ErrorException("Mesh with no center element. To be looked into"))
             end
             if symmetric
@@ -722,11 +723,14 @@ module Mesh
         - `(Figure)`:                -- A Figure object to superimpose.
     """
     function plot_3D(self, material_prop=nothing, backGround_param=nothing, fig=nothing, plot_prop=nothing)
+        
+        log = "JFrac.plot3D"
+        
         if backGround_param !== nothing && material_prop === nothing
             throw(ArgumentError("Material properties are required to plot the background parameter."))
         end
         if material_prop !== nothing && backGround_param === nothing
-            @warn "back ground parameter not provided. Plotting confining stress..." _group="PyFrac.mesh"
+            @warn "back ground parameter not provided. Plotting confining stress..." _group=log
             backGround_param = "sigma0"
         end
 
@@ -748,7 +752,7 @@ module Mesh
             plot_prop.textSize = max(self.Lx / 15, self.Ly / 15)
         end
 
-        @info "Plotting mesh in 3D..." _group="PyFrac.mesh"
+        @info "Plotting mesh in 3D..." _group=log
         if material_prop !== nothing && backGround_param !== nothing
             min_value, max_value, parameter, colors = process_material_prop_for_display(material_prop,
                                                                                     backGround_param)
@@ -796,7 +800,10 @@ module Mesh
         This function plots the scale of the fracture by adding lines giving the length dimensions of the fracture.
     """
     function plot_scale_3d(self, ax, plot_prop)
-        @info "\tPlotting scale..." _group="PyFrac.mesh"
+        
+        log = "JFrac.plot_scale_3D"
+        
+        @info "\tPlotting scale..." _group=log
 
         Path = mpath.Path
 
@@ -844,7 +851,7 @@ module Mesh
                 fc=edge_color)
         end
 
-        @info "\tAdding labels..." _group="PyFrac.mesh"
+        @info "\tAdding labels..." _group=log
         text3d(ax,
             (0.0,
                 -self.domainLimits[3] - plot_prop.textSize * 3,
@@ -939,7 +946,9 @@ module Mesh
         material properties.
     """
     function make_3D_colorbar(mesh, material_prop, backGround_param, ax, plot_prop)
-        @info "\tMaking colorbar..." _group="PyFrac.mesh"
+        
+        log = "JFrac.make_3D_colorbar"
+        @info "\tMaking colorbar..." _group=log
 
         min_value, max_value, parameter, colors = process_material_prop_for_display(material_prop,
                                                                                 backGround_param)

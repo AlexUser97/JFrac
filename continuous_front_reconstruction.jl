@@ -11,10 +11,10 @@ module ContinuousFrontReconstruction
     using .Properties: PlotProperties
     using .LevelSet: SolveFMM
     using PyPlot
-    import PyPlot: plotgrid
     using LinearAlgebra
     using Statistics
     using DataStructures
+    using LoggingExtras
 
     export itertools_chain_from_iterable, append_to_typelists, distance, copute_area_of_a_polygon, pointtolinedistance, is_inside_the_triangle,
     recompute_LS_at_tip_cells, findangle, elements, findcommon, filltable, ISinsideFracture, get_fictitius_cell_type, get_fictitius_cell_specific_names,
@@ -40,7 +40,7 @@ module ContinuousFrontReconstruction
         - nothing - it only plots the mesh grid
     """
 
-    function plotgrid(mesh::CartesianMesh, ax::PyPlot.PyObject)
+    function plotgrid(mesh, ax::PyPlot.PyObject)
         # set the four corners of the rectangular mesh
         ax.set_xlim([-mesh.Lx - mesh.hx / 2, mesh.Lx + mesh.hx / 2])
         ax.set_ylim([-mesh.Ly - mesh.hy / 2, mesh.Ly + mesh.hy / 2])
@@ -97,7 +97,7 @@ module ContinuousFrontReconstruction
         - `PyPlot.Figure`: the figure object
     """
     
-    function plot_cell_lists(mesh::CartesianMesh, list::Vector{Int}; 
+    function plot_cell_lists(mesh, list::Vector{Int}; 
                             fig::Union{PyPlot.Figure, Nothing}=nothing, 
                             mycolor::String="g", mymarker::String="_", 
                             shiftx::Float64=0.01, shifty::Float64=0.01,
@@ -147,7 +147,7 @@ module ContinuousFrontReconstruction
         - nothing - it only plots the mesh grid
     """
     
-    function plot_ray_tracing_numpy_results(mesh::CartesianMesh, 
+    function plot_ray_tracing_numpy_results(mesh, 
                                         x::Vector{Float64}, 
                                         y::Vector{Float64}, 
                                         poly::Matrix{Float64}, 
@@ -502,7 +502,7 @@ module ContinuousFrontReconstruction
     function ISinsideFracture(i::Int64, mesh, sgndDist_k::Vector{Float64})::Vector{Bool}
         #                         0     1      2      3
         #       NeiElements[i]->[left, right, bottom, up]
-        [left_elem, right_elem, bottom_elem, top_elem] = [1, 2, 3, 4]
+        left_elem, right_elem, bottom_elem, top_elem = [1, 2, 3, 4]
 
         a = mesh.NeiElements[i, top_elem]
         b = mesh.NeiElements[i, right_elem]
@@ -559,6 +559,7 @@ module ContinuousFrontReconstruction
             x = (q2 - q1) * m / (m * m + 1)
             y = m * x + q1
             # angle = atan(abs((y-y0))/abs((x-x0))) naive way of computing the angle
+        end
         # ---------------------------------------------------
 
         # here we use directly points 1 and 2 to find the angle instead of finding the intersection between the normal from a point to the
@@ -838,7 +839,7 @@ module ContinuousFrontReconstruction
         remembrer the usage of NeiElements[i]->[left, right, bottom, up]
                                                 0     1      2      3
         """
-        [left_elem, right_elem, bottom_elem, top_elem] = [1, 2, 3, 4]
+        left_elem, right_elem, bottom_elem, top_elem = [1, 2, 3, 4]
 
         a = NeiElements[fictitius_cells, top_elem]
         c = NeiElements[fictitius_cells, right_elem]
@@ -869,7 +870,7 @@ module ContinuousFrontReconstruction
         remembrer the usage of NeiElements[i]->[left, right, bottom, up]
                                                 0     1      2      3
         """
-        [left_elem, right_elem, bottom_elem, top_elem] = [1, 2, 3, 4]
+        left_elem, right_elem, bottom_elem, top_elem = [1, 2, 3, 4]
 
 
         a = NeiElements[fictitius_cells, top_elem]
@@ -897,7 +898,7 @@ module ContinuousFrontReconstruction
         remembrer the usage of NeiElements[i]->[left, right, bottom, up]
                                                 0     1      2      3
         """
-        [left_elem, right_elem, bottom_elem, top_elem] = [1, 2, 3, 4]
+        left_elem, right_elem, bottom_elem, top_elem = [1, 2, 3, 4]
 
 
         a = NeiElements[fictitius_cells, top_elem]
@@ -921,7 +922,7 @@ module ContinuousFrontReconstruction
         remembrer the usage of NeiElements[i]->[left, right, bottom, up]
                                                 0     1      2      3
         """
-        [left_elem, right_elem, bottom_elem, top_elem] = [1, 2, 3, 4]
+        left_elem, right_elem, bottom_elem, top_elem = [1, 2, 3, 4]
 
         if columns_to_output == "icba" || columns_to_output == "iabc" || columns_to_output == "ibca"
             a = NeiElements[fictitius_cells, top_elem]
@@ -971,7 +972,7 @@ module ContinuousFrontReconstruction
         remembrer the usage of NeiElements[i]->[left, right, bottom, up]
                                                 0     1      2      3
         """
-        # log = logging.getLogger('PyFrac.continuous_front_reconstruction')
+        # log = logging.getLogger('JFrac.continuous_front_reconstruction')
         LS = get_LS_on_i_fictitius_cell("icba", anularegion, NeiElements, sgndDist_k)
 
         """
@@ -1219,7 +1220,7 @@ module ContinuousFrontReconstruction
     end
 
     function define_orientation_type3OR4(type, Tx_other_intersections, mesh, sgndDist_k)
-        #log = logging.getLogger('PyFrac.continuous_front_reconstruction')
+        #log = logging.getLogger('JFrac.continuous_front_reconstruction')
         """
                             type 3        |                 |                 |                 |
                             3(+) & 1(-)   |                 |                 |                 |
@@ -1375,7 +1376,7 @@ module ContinuousFrontReconstruction
 
         #    0     1      2      3
         # NeiElements[i]->[left, right, bottom, up]
-        [left_elem, right_elem, bottom_elem, top_elem] = [1, 2, 3, 4]
+        left_elem, right_elem, bottom_elem, top_elem = [1, 2, 3, 4]
         #
         up = mesh.NeiElements[i, top_elem]
         right = mesh.NeiElements[i, right_elem]
@@ -2248,7 +2249,7 @@ module ContinuousFrontReconstruction
     end
 
     function get_next_cell_name(current_cell_name, previous_cell_name, FC_type, Args)
-        # log = logging.getLogger('PyFrac.continuous_front_reconstruction')
+        # log = logging.getLogger('JFrac.continuous_front_reconstruction')
         mesh, dict_Ribbon, sgndDist_k = Args
         dict_of_possibilities = Dict{String, Int64}()
         """
@@ -2364,7 +2365,6 @@ module ContinuousFrontReconstruction
     end
 
     function itertools_chain_from_iterable(lsts)
-        log = @logger "PyFrac.continuous_front_reconstruction"
         # lsts example: [[1], [], [2,3], [4], [], [5,6]]
         try
             # Check all elements are iterable (arrays)
@@ -2373,7 +2373,7 @@ module ContinuousFrontReconstruction
             end
             return reduce(vcat, lsts)
         catch e
-            @error log e.msg
+            @error e.msg _group="JFrac.continuous_front_reconstruction"
             return nothing
         end
     end
@@ -2472,11 +2472,11 @@ module ContinuousFrontReconstruction
             orthogonaldistances (float): -- descriptions.
             ...
     """
-    function reconstruct_front_continuous(sgndDist_k::Vector{Float64}, anularegion::Vector{Int64}, Ribbon::Vector{Int64}, eltsChannel::Vector{Int64}, mesh::CartesianMesh,
+    function reconstruct_front_continuous(sgndDist_k::Vector{Float64}, anularegion::Vector{Int64}, Ribbon::Vector{Int64}, eltsChannel::Vector{Int64}, mesh,
                                         recomp_LS_4fullyTravCellsAfterCoalescence_OR_RemovingPtsOnCommonEdge::Bool,
                                         lstTmStp_EltCrack0=nothing, oldfront=nothing)
         
-        log = @logger "PyFrac.continuous_front_reconstruction"
+        log = "JFrac.continuous_front_reconstruction"
         
         recompute_front = false
         float_precision = Float64
@@ -2489,7 +2489,7 @@ module ContinuousFrontReconstruction
         none of the cells at the boundary should have negative Level set
         """
         if any(sgndDist_k[mesh.Frontlist] .< 0)
-            @warn log "Some cells at the boundary of the mesh have negative level set"
+            @warn "Some cells at the boundary of the mesh have negative level set" _group = log
             negativefront = findall(sgndDist_k .< 0)
             intwithFrontlist = intersect(negativefront, mesh.Frontlist)
             correct_size_of_pstv_region = [false, true, false]
@@ -2526,11 +2526,11 @@ module ContinuousFrontReconstruction
         # the values of the LS in the fictitius cells might be not computed at all the cells, so increase the thickness of the band
         if exitstatus
             if any(sgndDist_k[mesh.Frontlist] .< 0)
-                @info log "increasing the thickness of the band will not help to reconstruct the front because it will be outside of the mesh: Failing the time-step"
+                @info "increasing the thickness of the band will not help to reconstruct the front because it will be outside of the mesh: Failing the time-step" _group = log
                 correct_size_of_pstv_region = [false, false, true]
                 return nothing, nothing, nothing, nothing, nothing, nothing, nothing, nothing, correct_size_of_pstv_region, nothing, nothing, nothing, nothing
             else
-                @debug log "I am increasing the thickness of the band (directive from find fictitius cells routine)"
+                @debug "I am increasing the thickness of the band (directive from find fictitius cells routine)" _group = log
                 # from utility import plot_as_matrix
                 # K = zeros(Float64, mesh.NumberOfElts)
                 # K[anularegion] = sgndDist_k[anularegion]
@@ -2553,7 +2553,7 @@ module ContinuousFrontReconstruction
         list_of_Cells_type_2_list::Vector{Vector{Int64}} = Vector{Vector{Int64}}()
         list_of_Cells_type_3_list::Vector{Vector{Int64}} = Vector{Vector{Int64}}()
         list_of_Cells_type_4_list::Vector{Vector{Int64}} = Vector{Vector{Int64}}()
-        Args::Vector{Any} = [mesh, dict_Ribbon, sgndDist_k]
+        Args = [mesh, dict_Ribbon, sgndDist_k]
 
         # I require more than 3 cells to define a single fracture
         if NofCells_to_explore > 3
@@ -2598,25 +2598,25 @@ module ContinuousFrontReconstruction
                             flattened_fict_cells = vcat(fict_cells_for_fracture...)
                             unique_fict_cells = unique(flattened_fict_cells)
                             
-                            intwithFrontlist::Vector{Int64} = intersect(unique_fict_cells, mesh.Frontlist)
+                            intwithFrontlist = intersect(unique_fict_cells, mesh.Frontlist)
                             if length(intwithFrontlist) > 0
-                                @info log "The new front reaches the boundary. Remeshing"
-                                correct_size_of_pstv_region::Vector{Bool} = [false, true, false]
+                                @info "The new front reaches the boundary. Remeshing" _group = log
+                                correct_size_of_pstv_region = [false, true, false]
                                 # Returning the intersection between the fictitius cells and the frontlist as tip in order to decide the direction of remeshing
                                 # (in case of anisotropic remeshing)
                                 return (intwithFrontlist, nothing, nothing, nothing, nothing, nothing, nothing, nothing, correct_size_of_pstv_region, nothing, nothing, nothing, nothing)
                             else
-                                @debug log "I am increasing the thickness of the band (tip i cell not found in the anularegion)"
-                                correct_size_of_pstv_region::Vector{Bool} = [false, false, false]
+                                @debug "I am increasing the thickness of the band (tip i cell not found in the anularegion)" _group = log
+                                correct_size_of_pstv_region = [false, false, false]
                                 return (nothing, nothing, nothing, nothing, nothing, nothing, nothing, nothing, correct_size_of_pstv_region, sgndDist_k, nothing, nothing, nothing)
                             end
                         end
-                        cell_type::Int64 = get_fictitius_cell_type(LSet_first_value)
+                        cell_type = get_fictitius_cell_type(LSet_first_value)
                     else
-                        cell_type::Int64 = i_1_2_3_4_FC_type[next_cell_name_str]
+                        cell_type = i_1_2_3_4_FC_type[next_cell_name_str]
                     end
 
-                    index_for_append_current::Int64 = length(Fracturelist)
+                    index_for_append_current = length(Fracturelist)
                     Cells_type_1_list, Cells_type_2_list, Cells_type_3_list, Cells_type_4_list = 
                         append_to_typelists(index_for_append_current, cell_type, Cells_type_1_list, Cells_type_2_list, Cells_type_3_list, Cells_type_4_list)
                         
@@ -2640,16 +2640,16 @@ module ContinuousFrontReconstruction
                     flattened_fict_cells_small = vcat(fict_cells_for_small_fracture...)
                     unique_fict_cells_small = unique(flattened_fict_cells_small)
                     
-                    intwithFrontlist::Vector{Int64} = intersect(unique_fict_cells_small, mesh.Frontlist)
+                    intwithFrontlist = intersect(unique_fict_cells_small, mesh.Frontlist)
                     if length(intwithFrontlist) > 0
-                        @info log "The new front reaches the boundary. Remeshing"
-                        correct_size_of_pstv_region::Vector{Bool} = [false, false, true]
+                        @info "The new front reaches the boundary. Remeshing" _group = log
+                        correct_size_of_pstv_region = [false, false, true]
                         # Returning the intersection between the fictitius cells and the frontlist as tip in order to decide the direction of remeshing
                         # (in case of anisotropic remeshing)
                         return (intwithFrontlist, nothing, nothing, nothing, nothing, nothing, nothing, nothing, correct_size_of_pstv_region, nothing, nothing, nothing, nothing)
                     else
-                        @debug log "<< I REJECT A POSSIBLE FRCTURE FRONT BECAUSE IS TOO SMALL >>"
-                        @debug log "set the LS of the positive cells to be -machine precision"
+                        @debug "<< I REJECT A POSSIBLE FRCTURE FRONT BECAUSE IS TOO SMALL >>" _group = log
+                        @debug "set the LS of the positive cells to be -machine precision" _group = log
                         all_cells_of_all_FC_of_this_small_fracture::Vector{Int64} = unique(get_fictitius_cell_all_names(Fracturelist, mesh.NeiElements)...) 
                         
                         sgnd_values_in_small_fracture = sgndDist_k[all_cells_of_all_FC_of_this_small_fracture]
@@ -2692,7 +2692,7 @@ module ContinuousFrontReconstruction
             x::Vector{Vector{Float64}} = [Float64[] for _ in Fracturelist]
             y::Vector{Vector{Float64}} = [Float64[] for _ in Fracturelist]
 
-            Args::Vector{Any} = [Fracturelist, Ribbon, mesh, sgndDist_k, float_precision, mac_precision]
+            Args = [Fracturelist, Ribbon, mesh, sgndDist_k, float_precision, mac_precision]
 
             indexesFC_TYPE_1::Vector{Int64} = list_of_Cells_type_1_list[j]
             indexesFC_TYPE_2::Vector{Int64} = list_of_Cells_type_2_list[j]
@@ -2712,8 +2712,8 @@ module ContinuousFrontReconstruction
             end
             
             if length(indexesFC_TYPE_2) > 0
-                @debug log "Type 2 to be tested"
-                correct_size_of_pstv_region::Vector{Bool} = [false, false, true]
+                @debug "Type 2 to be tested" _group = log
+                correct_size_of_pstv_region = [false, false, true]
                 return (nothing, nothing, nothing, nothing, nothing, nothing, nothing, nothing, correct_size_of_pstv_region, nothing, nothing, nothing, nothing)
                 # [x, y, typeindex, edgeORvertexID] = process_fictitius_cells_2(indexesFC_TYPE_4, Args, x, y, typeindex, edgeORvertexID)
                 # error("FRONT RECONSTRUCTION ERROR: type 2 to be tested")
@@ -2751,10 +2751,10 @@ module ContinuousFrontReconstruction
             end
             
             if closed_front_area <= area_of_a_cell * 1.01
-                @debug log "A small front of area = $(round(100 * closed_front_area / area_of_a_cell, digits=4))% of the single cell has been deleted"
+                @debug "A small front of area = $(round(100 * closed_front_area / area_of_a_cell, digits=4))% of the single cell has been deleted" _group = log
                 deleteTHEfront = true
             elseif (maximum(xintersection) - minimum(xintersection) < mesh.hx) || (maximum(yintersection) - minimum(yintersection) < mesh.hy)
-                @debug log "A front of area = $(round(100 * closed_front_area / area_of_a_cell, digits=4))% of the single cell has been deleted because it was longh and thin within a column or raw of elements"
+                @debug "A front of area = $(round(100 * closed_front_area / area_of_a_cell, digits=4))% of the single cell has been deleted because it was longh and thin within a column or raw of elements" _group = log
                 deleteTHEfront = true
             end
 
@@ -2870,7 +2870,7 @@ module ContinuousFrontReconstruction
                 end
                 if counter > 0
                     recomp_LS_4fullyTravCellsAfterCoalescence_OR_RemovingPtsOnCommonEdge = true
-                    @debug log "deleted $(counter) points on the same edge but close to each other"
+                    @debug "deleted $(counter) points on the same edge but close to each other" _group = log
                 end
 
                 """
@@ -2922,7 +2922,7 @@ module ContinuousFrontReconstruction
                 
                 if recursive_counter > 0
                     recomp_LS_4fullyTravCellsAfterCoalescence_OR_RemovingPtsOnCommonEdge = true
-                    @debug log "deleted $(recursive_counter) points on the same edge that leads to sub resolution"
+                    @debug "deleted $(recursive_counter) points on the same edge that leads to sub resolution" _group = log
                 end
 
                 """
@@ -2933,19 +2933,6 @@ module ContinuousFrontReconstruction
                                             check if the next and previous points shares an edge of the edges exiting front C
                                             check that the edges of the previous point and the next one belongs to the same element
                                             in order to avoid the case where -A-B-C-G-E- will see C removed
-                        ___|___________|___________|_   
-                        |           |           |
-                        | A         |           |
-                        ==**          |           |
-                        |\\         | C    G    |
-                        ___|_**=======**______**___F_
-                        |  B       ||           |
-                        |          ||           |
-                        |          **  D        |
-                        |           \\          |
-                        |           |\\  E      |
-                        ___|___________|_**________|_
-                        |           |           |
                 """
                 """
                 CASE 2: 
@@ -2956,57 +2943,16 @@ module ContinuousFrontReconstruction
                                             or vice versa...
                                             check if the two points on the vertex shares the same edge
                                             check if the the previous and the next point are on the same element
-
-                        ___|___________|___   
-                        |           |
-                        | A         |
-                        ==**          |
-                        |\\         | C
-                        ___|_**=======**___
-                        | B        ||
-                        |          || 
-                        |          ||
-                        |          ||         
-                        |          || D
-                        ___|__________**____
-                        |          ||
                 """
                 """
                 CASE 3: 
                 B is the corner to be deleted.
                 Note that removing one of the two points will not change the choice of the tip cell.
                 This case DO NOT CONSIDER WHEN G IS NOT IN ONE EDGE OF [CFED]
-
-                        ___L___________K____________J   
-                        |           |            |
-                        | A         |            |
-                        ==**          |            |
-                        |\\         | C          |
-                        ___F_**=======**____________I
-                        | B         \\           |
-                        |           |\\          |
-                        |           | \\         |
-                        |           |  \\        |
-                        |           |   \\ G     |
-                        ___E___________D____**______H (we only ask that G does not belong to [CFED]
-                        |           |
                         
                 forbidden nodes are meant to be (D,E,F,C,K,L)
                 forbidden edges are meant to be all the edges of [CFED] and [FCKL]
                 
-                        ___|___________|____________|___   
-                        |           |            |
-                        |           |            |
-                        ==**          |           **===
-                        |\\         |          //|
-                        ___|_**=======**=========**_|____
-                        |           |            |
-                        |           |            |
-                        |           |            |
-                        |           |            |
-                        |           |            |
-                        ___|___________|____________|__ 
-                        |           |            |
                 """
                 vertex_indexes::Vector{Int64} = findall(x -> x == 1, typeindex)
                 counter = 0
@@ -3194,7 +3140,7 @@ module ContinuousFrontReconstruction
                 end
                 
                 if counter > 0
-                    @debug log "deleted $(counter + add_at_the_end) edge and corner points"
+                    @debug "deleted $(counter + add_at_the_end) edge and corner points" _group = log
                 end
                 
                 if length(vertex_indexes) > 0
@@ -3286,8 +3232,8 @@ module ContinuousFrontReconstruction
                 if length(dup) > 1
                     recompute_front = true
                     # set the repeated cells artificially inside the fracture
-                    @debug log "Recomputing the fracture front because one or more coalescing point have been found"
-                    @debug log "set the repeated cells artificially inside the fracture: volume error equal to $(length(dup)) cells"
+                    @debug "Recomputing the fracture front because one or more coalescing point have been found" _group = log
+                    @debug "set the repeated cells artificially inside the fracture: volume error equal to $(length(dup)) cells" _group = log
                     sgndDist_k[dup] .= -zero_level_set_value
                     break # break here
 
@@ -3394,9 +3340,6 @@ module ContinuousFrontReconstruction
                             end
                         end
                     end # for nodeindex in 1:length(xintersection)
-
-                    if recomp_LS_4fullyTravCellsAfterCoalescence_OR_RemovingPtsOnCommonEdge
-                    end
                     
                     listofTIPcellsONLY = convert(Vector{Int64}, listofTIPcells) # It contains only the tip cells, not the one fully traversed
                     vertexpositionwithinthecellTIPcellsONLY = convert(Vector{Int64}, vertexpositionwithinthecell)
@@ -3460,9 +3403,10 @@ module ContinuousFrontReconstruction
                     fronts_dictionary["xint_$(j-1)"] = xintersection
                     fronts_dictionary["yint_$(j-1)"] = yintersection
                 end # if length(dup) > 1
+            end
+        end
 
-
-
+        
         if !recompute_front
             """
             6) - find fully traversed elements and their alphas & distances 
@@ -3632,7 +3576,7 @@ module ContinuousFrontReconstruction
                 recomp_LS_4fullyTravCellsAfterCoalescence_OR_RemovingPtsOnCommonEdge = true
                 # set the repeated cells artificially inside the fracture
                 # log.debug("set the repeated cells artificially inside the fracture: volume error equal to " * string(length(dup)) * " cells")
-                @debug "set the repeated cells artificially inside the fracture: volume error equal to $(length(dup)) cells"
+                @debug "set the repeated cells artificially inside the fracture: volume error equal to $(length(dup)) cells" _group = log
                 sgndDist_k[dup] .= -zero_level_set_value
                 # fig1 = plot_cells(anularegion, mesh, sgndDist_k, Ribbon, dup, nothing, true)
             else
@@ -3709,7 +3653,7 @@ module ContinuousFrontReconstruction
                 Ffront = hcat(xinters4all_closed_paths_1, yinters4all_closed_paths_1, 
                             xinters4all_closed_paths_2, yinters4all_closed_paths_2)
             else
-                @warn "Mismatch in lengths of intersection arrays for Ffront"
+                @warn "Mismatch in lengths of intersection arrays for Ffront" _group = log
                 Ffront = Array{Float64}(undef, 0, 4)
             end
         end
@@ -3849,7 +3793,7 @@ module ContinuousFrontReconstruction
             convert(Array, global_list_of_TIPcellsONLY),
             convert(Array, global_list_of_distances),
             convert(Array, global_list_of_angles),
-            CellStatusNew, # Array (Matrix) типа Int
+            CellStatusNew, # Array (Matrix):: Int
             convert(Array, global_list_of_newRibbon),
             convert(Array, global_list_of_vertexpositionwithinthecell),
             convert(Array, global_list_of_vertexpositionwithinthecellTIPcellsONLY),
@@ -3859,6 +3803,7 @@ module ContinuousFrontReconstruction
             number_of_fronts, # Int
             fronts_dictionary # Dict
         )
+    end
 
 
     """
@@ -3951,7 +3896,7 @@ module ContinuousFrontReconstruction
 
         difference = setdiff(fully_traversed_k, unique(NeiElements[EltTip_last_tmstp, :][:]))
         if length(difference) > 0
-            # @debug log "$(length(difference))"
+            # @debug "$(length(difference))" _group = log
             # plot_two_fronts(mesh, newfront=newfront, oldfront=oldfront, fig=nothing, grid=true, cells=difference)
             return true
         else  # == 0

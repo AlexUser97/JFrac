@@ -1501,7 +1501,7 @@ module ElastoHydrodynamicSolver
     function Picard_Newton(Res_fun, sys_fun, guess, TypValue, interItr_init, sim_prop, args...;
                         PicardPerNewton=1000, perf_node=nothing)
         
-        log = Logging.getlogger("PyFrac.Picard_Newton")
+        log = "JFrac.Picard_Newton"
         relax = sim_prop.relaxation_factor
         solk = copy(guess)
         k = 0
@@ -1526,7 +1526,7 @@ module ElastoHydrodynamicSolver
                     solk = relax * solkm1 + (1 - relax) * (A \ b)
                 catch e
                     if isa(e, LinearAlgebra.SingularException)
-                        @error log "singular matrix!"
+                        @error "singular matrix!" _group = log
                         solk = fill(NaN, length(solk))
                         if perf_node !== nothing
                             instrument_close(perf_node, perfNode_linSolve, nothing,
@@ -1550,7 +1550,7 @@ module ElastoHydrodynamicSolver
             end
 
             if k == sim_prop.maxSolverItrs  # returns nan as solution if does not converge
-                @warn log "Picard iteration not converged after $(sim_prop.maxSolverItrs) iterations, norm: $norm"
+                @warn "Picard iteration not converged after $(sim_prop.maxSolverItrs) iterations, norm: $norm" _group = log
                 solk = fill(NaN, length(solk))
                 if perf_node !== nothing
                     perfNode_linSolve.failure_cause = "singular matrix"
@@ -1560,7 +1560,7 @@ module ElastoHydrodynamicSolver
             end
         end
 
-        @debug log "Converged after $k iterations"
+        @debug "Converged after $k iterations" _group = log
         data = [interItr[1], interItr[3], interItr[4]]
         return solk, data
     end
@@ -1860,7 +1860,7 @@ module ElastoHydrodynamicSolver
     """
     function Anderson(sys_fun, guess, interItr_init, sim_prop, args...; perf_node=nothing)
         
-        log = Logging.getlogger("PyFrac.Anderson")
+        log = "JFrac.Anderson"
         m_Anderson = sim_prop.Anderson_parameter
         relax = sim_prop.relaxation_factor
 
@@ -1885,7 +1885,7 @@ module ElastoHydrodynamicSolver
             xks[2, :] = Gks[1, :]                                               # x1
         catch e
             if isa(e, LinearAlgebra.SingularException)
-                @error log "singular matrix!"
+                @error log "singular matrix!" _group = log
                 solk = fill(NaN, length(xks[1, :]))
                 if perf_node !== nothing
                     instrument_close(perf_node, perfNode_linSolve, nothing,
@@ -1934,7 +1934,7 @@ module ElastoHydrodynamicSolver
 
             catch e
                 if isa(e, LinearAlgebra.SingularException)
-                    @error log "singular matrix!"
+                    @error "singular matrix!" _group = log
                     solk = fill(NaN, length(xks[mk, :]))
                     if perf_node !== nothing
                         instrument_close(perf_node, perfNode_linSolve, nothing,
@@ -1959,7 +1959,7 @@ module ElastoHydrodynamicSolver
             end
 
             if k == sim_prop.maxSolverItrs  # returns nan as solution if does not converge
-                @warn log "Anderson iteration not converged after $(sim_prop.maxSolverItrs) iterations, norm: $norm"
+                @warn "Anderson iteration not converged after $(sim_prop.maxSolverItrs) iterations, norm: $norm"
                 solk = fill(NaN, size(xks[1, :], 2))
                 if perf_node !== nothing
                     perfNode_linSolve.failure_cause = "singular matrix"
@@ -1969,7 +1969,7 @@ module ElastoHydrodynamicSolver
             end
         end
 
-        @debug log "Converged after $k iterations"
+        @debug "Converged after $k iterations" _group = log
 
         data = [interItr[1], interItr[3], interItr[4]]
         return xks[mk + 2, :], data

@@ -12,7 +12,7 @@ module Properties
 
     include("common_functions.jl")
     include("labels.jl")
-    using .CommonFunctions: locate_element
+    using .CommonFunctions: locate_element, logging_level
     using .Labels: var_labels, supported_variables, units, err_msg_variable, unit_conversion, Fig_labels, unidimensional_variables
 
     export MaterialProperties, FluidProperties, InjectionProperties, LoadingProperties, SimulationProperties,
@@ -35,6 +35,9 @@ module Properties
         - `Tuple{Float64, Float64, Float64}`: RGB values in range [0, 1]
     """
     function to_rgb(color::Union{String, Tuple})
+        
+        log = "JFrac.to_rgb"
+        
         if isa(color, Tuple)
             if length(color) >= 3
                 return (Float64(color[1]), Float64(color[2]), Float64(color[3]))
@@ -83,7 +86,7 @@ module Properties
         if haskey(color_map, color_name)
             return color_map[color_name]
         else
-            @warn "Unknown color: $color. Using black as default."
+            @warn "Unknown color: $color. Using black as default." _group = log
             return (0.0, 0.0, 0.0)
         end
     end
@@ -580,6 +583,9 @@ module Properties
                                 check_cell_vertices::Bool=false)
             
             # Initialize variables that might not be set
+            
+            log = "JFrac.InjectionProperties"
+            
             injectionRate_val = Matrix{Float64}(undef, 0, 0)
             injectionRate_delayed_second_injpoint_val = nothing
             injectionTime_delayed_second_injpoint_val = nothing
@@ -663,7 +669,7 @@ module Properties
                 sourceCoordinates_val = Vector{Float64}(undef, 2)
                 if source_coordinates !== nothing
                     if length(source_coordinates) == 2
-                        @info "Setting the source coordinates to the closest cell center..."
+                        @info "Setting the source coordinates to the closest cell center..." _group = log
                         sourceCoordinates_val = source_coordinates
                     else
                         # error
@@ -681,7 +687,7 @@ module Properties
                 end
                 sourceElem_val = [sourceElem_single]
                 sourceCoordinates_val = mesh.CenterCoor[sourceElem_single, :]
-                @info "Injection point: (x, y) = ($(mesh.CenterCoor[sourceElem_single, 1]), $(mesh.CenterCoor[sourceElem_single, 2]))"
+                @info "Injection point: (x, y) = ($(mesh.CenterCoor[sourceElem_single, 1]), $(mesh.CenterCoor[sourceElem_single, 2]))" _group = log
                 sourceLocFunc_val = nothing
             else
                 sourceLocFunc_val = source_loc_func
@@ -1312,63 +1318,52 @@ module Properties
     """
     function set_logging_to_file(self::SimulationProperties, address::String, verbosity_level::Union{String, Nothing}=nothing)
         
-        level_str = something(verbosity_level, self.verbositylevel)
+        log = "JFrac.set_logging_to_file"
         
-        file_level = if level_str == "debug"
-            Logging.Debug
-        elseif level_str == "info"
-            Logging.Info
-        elseif level_str == "warning" 
-            Logging.Warn
-        elseif level_str == "error"
-            Logging.Error
-        elseif level_str == "critical"
-            Logging.Error
-        else
-            @warn "Unknown verbosity level '$level_str', defaulting to Info level."
-            Logging.Info
-        end
+        level_str = something(verbosity_level, self.verbositylevel)
+
+        file_level = logging_level(level_str)
 
         slash = Sys.iswindows() ? "\\" : "/"
         log_dir = endswith(address, slash) ? address : address * slash
+
+        if !isdir(log_dir)
+            mkdir(log_dir)
+        end
+
         log_file_path = log_dir * "JFrac_log.txt"
         
         try
             log_io = open(log_file_path, "w")
             
-            # Создание форматированного логгера
             formatted_logger = FormatLogger(log_io) do io, args
                 timestamp = Dates.format(now(), "mm-dd-yy HH:MM")
-                level = string(args.level)
-                name = get(args.kwargs, :_group, "PyFrac")
+                level = rpad(string(args.level), 8)
+                name = rpad(get(args.kwargs, :_group, "JFrac"), 40)
                 msg = args.message
-                print(io, "$timestamp $name        $level    $msg\n")
+                println(io, "$timestamp $name $level $msg\n")
             end
-            
-            # Фильтр для PyFrac логов
-            pyfrac_filtered_logger = EarlyFilteredLogger(
-                (log_args) -> begin
-                    group_name = get(log_args.kwargs, :_group, "")
-                    startswith(string(group_name), "PyFrac")
-                end,
-                formatted_logger
-            )
-            
-            # Фильтр по уровню
-            min_level_logger = MinLevelLogger(file_level, pyfrac_filtered_logger)
-            
+
+            jfrac_filter(log_args) = startswith(string(get(log_args.kwargs, :_group, "")), "JFrac")
+            jfrac_file_logger = EarlyFilteredLogger(jfrac_filter, MinLevelLogger(formatted_logger, file_level))
+
+            file_only_filter(log_args) = startswith(string(get(log_args.kwargs, :_group, "")), "JFrac_LF")
+            file_only_logger = EarlyFilteredLogger(file_only_filter, MinLevelLogger(formatted_logger, Logging.Debug))
+
+            global_logger(MinLevelLogger(global_logger(), Logging.Debug))
+
             current_console_logger = global_logger()
-            tee_logger = TeeLogger(current_console_logger, min_level_logger)
+            tee_logger = TeeLogger(current_console_logger, jfrac_file_logger, file_only_logger)
             global_logger(tee_logger)
-            
+
             self.log2file = true
-            @info "Log file set up" _group="PyFrac.general"
-            
+            @info "Log file set up" _group="JFrac.general"
+
         catch e
-            @error "Failed to set up log file at $log_file_path" exception=(e, catch_backtrace()) _group="PyFrac.general"
+            @error "Failed to set up log file at $log_file_path" exception=(e, catch_backtrace()) _group="JFrac.general"
             self.log2file = false
         end
-        
+
         return nothing
     end
     # ----------------------------------------------------------------------------------------------------------------------

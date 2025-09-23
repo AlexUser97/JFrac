@@ -1026,6 +1026,8 @@ module FractureModule
 
     function update_tip_regime(self, mat_prop, fluid_prop, timeStep)
 
+        log = "JFrac.update_tip_regime"
+
         # fixed parameters
         beta_mtilde = 4 / (15^(1/4) * (2^(1/2) - 1)^(1/4))
         beta_m = 2^(1/3) * 3^(5/6)
@@ -1048,7 +1050,7 @@ module FractureModule
 
         for i in moving
             if any(isnan.(self.sgndDist[self.EltRibbon[i]]))
-                @debug "Why nan distance?"
+                @debug "Why nan distance?" _group = log
             end
             
             wk = mat_prop.Kprime[self.EltRibbon[i]] / mat_prop.Eprime * abs(self.sgndDist[self.EltRibbon[i]])^(1/2)

@@ -54,7 +54,10 @@ module PostprocessFracture
         - `Tuple{Vector, Any}`: a list of fractures and properties
     """
     function load_fractures(address=nothing, sim_name="simulation", time_period=0.0, time_srs=nothing, step_size=1, load_all=false)
-        @info "Returning fractures..."
+        
+        log = "JFrac.load_fractures"
+        
+        @info "Returning fractures..." _group = log
 
         # Set default address if not provided
         slash = Sys.iswindows() ? "\\" : "/"
@@ -102,11 +105,11 @@ module PostprocessFracture
             try
                 ff = load(fracture_file, "fracture")
                 if load_all
-                    @info "Returning fracture at $(ff.time) s"
+                    @info "Returning fracture at $(ff.time) s" _group = log
                     push!(fracture_list, ff)
                 else
                     if 1.0 - next_t / ff.time >= -1e-8
-                        @info "Returning fracture at $(ff.time) s"
+                        @info "Returning fracture at $(ff.time) s" _group = log
                         push!(fracture_list, ff)
                         if t_srs_given
                             if t_srs_indx < length(time_srs)
@@ -198,7 +201,8 @@ module PostprocessFracture
         - `sim_name_new::Union{String, Nothing}`: the name to be given to the simulation.
     """
     function rename_simulation(address=nothing, sim_name="simulation", sim_name_new=nothing)
-        @info "Renaming simulation..."
+        
+        @info "Renaming simulation..." _group = "JFrac.rename_simulation"
 
         if sim_name_new === nothing
             sim_name_new = sim_name * "new"
@@ -231,7 +235,7 @@ module PostprocessFracture
                 try
                     mv(old_filename, new_filename)
                 catch e
-                    @error "Error renaming file $old_filename: $e"
+                    @error "Error renaming file $old_filename: $e" _group = "JFrac.rename_simulation"
                     break
                 end
             else
@@ -613,7 +617,8 @@ module PostprocessFracture
         - `time_srs::Vector`: a list of times at which the fractures are stored.
     """
     function get_fracture_variable_at_point(fracture_list, variable, point, edge=4, return_time=true)
-        logger = Logging.current_logger()
+        
+        log = "JFrac.get_fracture_variable_at_point"
         
         if variable ∉ supported_variables
             error("Variable not supported")
@@ -646,12 +651,12 @@ module PostprocessFracture
                         value_point = interpolator(point[1], point[2])
                         
                         if isnan(value_point)
-                            @warn "Point outside fracture."
+                            @warn "Point outside fracture." _group = log
                         end
                         
                         push!(return_list, value_point)
                     catch e
-                        @warn "Interpolation failed: $e"
+                        @warn "Interpolation failed: $e" _group = log
                         push!(return_list, NaN)
                     end
                 end
@@ -1253,7 +1258,7 @@ module PostprocessFracture
                     value from 0 to 4 (0->left, 1->right, 2->bottom, 3->top, 4->average).
     """
     function write_fracture_variable_csv_file(file_name, fracture_list, variable, point=nothing, edge=4)
-        logger = Logging.current_logger()
+        log = "JFrac.write_fracture_variable_csv_file"
         
         if variable ∉ supported_variables
             error(err_msg_variable)
@@ -1285,11 +1290,11 @@ module PostprocessFracture
                     value_point = interpolator(point[1], point[2])
                     
                     if isnan(value_point)
-                        @warn "Point outside fracture."
+                        @warn "Point outside fracture." _group = log
                     end
                     push!(return_list, value_point)
                 catch e
-                    @warn "Interpolation failed: $e"
+                    @warn "Interpolation failed: $e" _group = log
                     push!(return_list, NaN)
                 end
             end
@@ -1400,8 +1405,8 @@ module PostprocessFracture
         - `delete_existing_filename::Bool`: whether to delete existing file.
     """
     function append_to_json_file(file_name, content, action, key=nothing, delete_existing_filename=false)
-        logger = Logging.current_logger()
-
+        
+        log = "JFrac.append_to_json_file"
 
         # 1) Check if the file_name is a Json file
         if file_name[end-4:end] != ".json"
@@ -1411,7 +1416,7 @@ module PostprocessFracture
         # 3) Check if the file already exists
         if isfile(file_name) && delete_existing_filename
             rm(file_name)
-            @warn "File " * file_name * " existed and it will be Removed!"
+            @warn "File " * file_name * " existed and it will be Removed!" _group = log
         end
 
         # 4) Check if the file already exists
@@ -1468,7 +1473,7 @@ module PostprocessFracture
                     JSON.print(f, data)
                 end
             catch e
-                @error "Error reading or writing JSON file: $e"
+                @error "Error reading or writing JSON file: $e" _group = log
                 rethrow(e)
             end
         else
@@ -1564,7 +1569,9 @@ module PostprocessFracture
         - `intercepts::Vector{Vector{Float64}}`: list of top, bottom, left and right intercepts for each fracture in the list
     """
     function get_front_intercepts(fr_list, point)
-        logger = Logging.current_logger()
+
+        log = "JFrac.get_front_intercepts"
+
         intercepts = Vector{Vector{Float64}}()
 
         for fr in fr_list
@@ -1575,7 +1582,7 @@ module PostprocessFracture
             pnt_cell = fr.mesh.locate_element(point[1], point[2])
             
             if !(pnt_cell in fr.EltChannel)
-                @warn "Point is not inside fracture!"
+                @warn "Point is not inside fracture!" _group = log
             else
                 # The y coordinate of the cell
                 pnt_cell_y = fr.mesh.CenterCoor[pnt_cell, 2]

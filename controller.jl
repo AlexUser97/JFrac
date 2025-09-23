@@ -92,6 +92,7 @@ module Controller
             obj = new()
             obj.errorMessages = TS_errorMessages
 
+            log = "JFrac.controller"
             obj.fracture = Fracture
             obj.solid_prop = Solid_prop
             obj.fluid_prop = Fluid_prop
@@ -227,17 +228,17 @@ module Controller
             # setting up tip asymptote
             if obj.fluid_prop.rheology in ["Herschel-Bulkley", "HBF"]
                 if !(obj.sim_prop.get_tipAsymptote() in ["HBF", "HBF_aprox", "HBF_num_quad"])
-                    @warn "Fluid rheology and tip asymptote does not match. Setting tip asymptote to 'HBF'"
+                    @warn "Fluid rheology and tip asymptote does not match. Setting tip asymptote to 'HBF'" _group = log
                     obj.sim_prop.set_tipAsymptote("HBF")
                 end
             elseif obj.fluid_prop.rheology in ["power-law", "PLF"]
                 if !(obj.sim_prop.get_tipAsymptote() in ["PLF", "PLF_aprox", "PLF_num_quad", "PLF_M"])
-                    @warn "Fluid rheology and tip asymptote does not match. Setting tip asymptote to 'PLF'"
+                    @warn "Fluid rheology and tip asymptote does not match. Setting tip asymptote to 'PLF'" _group = log
                     obj.sim_prop.set_tipAsymptote("PLF")
                 end
             elseif obj.fluid_prop.rheology == "Newtonian"
                 if !(obj.sim_prop.get_tipAsymptote() in ["K", "M", "Mt", "U", "U1", "MK", "MDR", "M_MDR"])
-                    @warn "Fluid rheology and tip asymptote does not match. Setting tip asymptote to 'U'"
+                    @warn "Fluid rheology and tip asymptote does not match. Setting tip asymptote to 'U'" _group = log
                     obj.sim_prop.set_tipAsymptote("U1")
                 end
             end
@@ -249,10 +250,10 @@ module Controller
             # if you set the code to advance max 1 cell then remove the SimulProp.timeStepLimit
             if obj.sim_prop.timeStepLimit !== nothing && obj.sim_prop.limitAdancementTo2cells == true
                 if obj.sim_prop.forceTmStpLmtANDLmtAdvTo2cells == false
-                    @warn "You have set sim_prop.limitAdancementTo2cells = True. This imply that sim_prop.timeStepLimit will be deactivated."
+                    @warn "You have set sim_prop.limitAdancementTo2cells = True. This imply that sim_prop.timeStepLimit will be deactivated." _group = log
                     obj.sim_prop.timeStepLimit = nothing
                 else
-                    @warn "You have forced <limitAdancementTo2cells> to be True and set <timeStepLimit> - the first one might be uneffective onto the second one until the prefactor has been reduced to produce a time step < timeStepLimit"
+                    @warn "You have forced <limitAdancementTo2cells> to be True and set <timeStepLimit> - the first one might be uneffective onto the second one until the prefactor has been reduced to produce a time step < timeStepLimit" _group = log
                 end
             end
 
@@ -275,8 +276,8 @@ module Controller
         - `Bool`: True if simulation completed successfully
     """
     function run(self::Controller)::Bool
-        # log = get_logger("JFrac.controller.run")
-        # log_only_to_logfile = get_logger("JFrac_LF.controller.run") # Placeholder for specific file logger
+        log = "JFrac.controller.run"
+        log_only_to_logfile = "JFrac_LF.controller.run" # Placeholder for specific file logger
 
         # output initial fracture
         if self.sim_prop.saveToDisk
@@ -315,7 +316,7 @@ module Controller
         # load elasticity matrix
         if self.C === nothing
             # log.info("Making elasticity matrix...")
-            @info "Making elasticity matrix..."
+            @info "Making elasticity matrix..." _group = log
             # if self.sim_prop.symmetric:
             if self.sim_prop.symmetric
                 # if not self.sim_prop.get_volumeControl():
@@ -365,10 +366,10 @@ module Controller
                 end
             end
             # log.info('Done!')
-            @info "Done!"
+            @info "Done!" _group = log
         end
 
-        @info "Starting time = $(self.fracture.time)"
+        @info "Starting time = $(self.fracture.time)" _group = log
         # starting time stepping loop
         while self.fracture.time < 0.999 * self.sim_prop.finalTime && self.TmStpCount < self.sim_prop.maxTimeSteps
 
@@ -402,12 +403,12 @@ module Controller
 
             if status == 1
                 # Successful time step
-                @info "Time step successful!"
-                @debug "Element in the crack: $(length(Fr_n_pls1.EltCrack))"
-                @debug "Nx: $(Fr_n_pls1.mesh.nx)"
-                @debug "Ny: $(Fr_n_pls1.mesh.ny)"
-                @debug "hx: $(Fr_n_pls1.mesh.hx)"
-                @debug "hy: $(Fr_n_pls1.mesh.hy)"
+                @info "Time step successful!" _group = log
+                @debug "Element in the crack: $(length(Fr_n_pls1.EltCrack))" _group = log
+                @debug "Nx: $(Fr_n_pls1.mesh.nx)" _group = log
+                @debug "Ny: $(Fr_n_pls1.mesh.ny)" _group = log
+                @debug "hx: $(Fr_n_pls1.mesh.hx)" _group = log
+                @debug "hy: $(Fr_n_pls1.mesh.hy)" _group = log
                 self.delta_w = Fr_n_pls1.w - self.fracture.w
                 self.lstTmStp = Fr_n_pls1.time - self.fracture.time
                 # output
@@ -497,7 +498,7 @@ module Controller
                 # if self.TmStpCount == self.sim_prop.maxTimeSteps:
                 if self.TmStpCount == self.sim_prop.maxTimeSteps
                     # log.warning("Max time steps reached!")
-                    @warn "Max time steps reached!"
+                    @warn "Max time steps reached!" _group = log
                 end
 
             # elif status == 12 or status == 16:
@@ -558,12 +559,12 @@ module Controller
                         # if cond1 || cond2
                         if cond1 || cond2
                             # log.warning("Reduction of cells not possible as minimal cell size would be violated!")
-                            @warn "Reduction of cells not possible as minimal cell size would be violated!"
+                            @warn "Reduction of cells not possible as minimal cell size would be violated!" _group = log
                             # self.sim_prop.meshReductionPossible = False
                             self.sim_prop.meshReductionPossible = false
                         else
                             # log.info("Reducing cell number...")
-                            @info "Reducing cell number..."
+                            @info "Reducing cell number..." _group = log
 
                             # We need to make sure the injection point stays where it is. We also do this for two points
                             # on same x or y
@@ -623,7 +624,7 @@ module Controller
                                     reduction_factor = self.sim_prop.meshReductionFactor
                                 end
                                 # log.info("The real reduction factor used is " + repr(reduction_factor))
-                                @info "The real reduction factor used is $(reduction_factor)"
+                                @info "The real reduction factor used is $(reduction_factor)" _group = log
 
                             else
                                 # index = self.fracture.mesh.locate_element(0., 0.)[0]
@@ -786,7 +787,7 @@ module Controller
                     # This is the classical remeshing where the sides of the elements are multiplied by a constant.
                     # if compress:
                     if compress
-                        @info "Remeshing by compressing the domain..."
+                        @info "Remeshing by compressing the domain..." _group = log 
 
                         # We need to make sure the injection point stays where it is. We also do this for two points
                         # on same x or y
@@ -831,7 +832,7 @@ module Controller
                                 compression_factor = self.sim_prop.remeshFactor
                             end
                             # log.info("The real reduction factor used is " + repr(compression_factor))
-                            @info "The real reduction factor used is $(compression_factor)"
+                            @info "The real reduction factor used is $(compression_factor)" _group = log
 
 
                         end
@@ -904,7 +905,7 @@ module Controller
                                     # if not self.sim_prop.symmetric:
                                     if !self.sim_prop.symmetric
                                         # log.info("Remeshing by extending towards negative y...")
-                                        @info "Remeshing by extending towards negative y..."
+                                        @info "Remeshing by extending towards negative y..." _group = log
                                         # Assuming domainLimits is [y_min, y_max, x_min, x_max] in Python (0-based indices)
                                         # In Julia, it would be [y_min, y_max, x_min, x_max] -> indices 1,2,3,4
                                         new_limits = [
@@ -913,7 +914,7 @@ module Controller
                                         ]
                                     else
                                         # log.info("Remeshing by extending in vertical direction to keep symmetry...")
-                                        @info "Remeshing by extending in vertical direction to keep symmetry..."
+                                        @info "Remeshing by extending in vertical direction to keep symmetry..." _group = log
                                         new_limits = [
                                             [self.fracture.mesh.domainLimits[3], self.fracture.mesh.domainLimits[4]],
                                             [
@@ -947,14 +948,14 @@ module Controller
                                     # if not self.sim_prop.symmetric:
                                     if !self.sim_prop.symmetric
                                         # log.info("Remeshing by extending towards positive y...")
-                                        @info "Remeshing by extending towards positive y..."
+                                        @info "Remeshing by extending towards positive y..." _group = log
                                         new_limits = [
                                             [self.fracture.mesh.domainLimits[3], self.fracture.mesh.domainLimits[4]],
                                             [self.fracture.mesh.domainLimits[1], self.fracture.mesh.domainLimits[2] + elems_add * self.fracture.mesh.hy]
                                         ]
                                     else
                                         # log.info("Remeshing by extending in vertical direction to keep symmetry...")
-                                        @info "Remeshing by extending in vertical direction to keep symmetry..."
+                                        @info "Remeshing by extending in vertical direction to keep symmetry..." _group = log
                                         new_limits = [
                                             [self.fracture.mesh.domainLimits[3], self.fracture.mesh.domainLimits[4]],
                                             [
@@ -980,14 +981,14 @@ module Controller
                                     # if not self.sim_prop.symmetric:
                                     if !self.sim_prop.symmetric
                                         # log.info("Remeshing by extending towards negative x...")
-                                        @info "Remeshing by extending towards negative x..."
+                                        @info "Remeshing by extending towards negative x..." _group = log
                                         new_limits = [
                                             [self.fracture.mesh.domainLimits[3] - elems_add * self.fracture.mesh.hx, self.fracture.mesh.domainLimits[4]],
                                             [self.fracture.mesh.domainLimits[1], self.fracture.mesh.domainLimits[2]]
                                         ]
                                     else
                                         
-                                        @info "Remeshing by extending in horizontal direction to keep symmetry..."
+                                        @info "Remeshing by extending in horizontal direction to keep symmetry..." _group = log
                                         new_limits = [
                                             [
                                                 self.fracture.mesh.domainLimits[3] - elems_add * self.fracture.mesh.hx/2,
@@ -1013,14 +1014,14 @@ module Controller
 
                                     # if not self.sim_prop.symmetric:
                                     if !self.sim_prop.symmetric
-                                        @info "Remeshing by extending towards positive x..."
+                                        @info "Remeshing by extending towards positive x..." _group = log
                                         new_limits = [
                                             [self.fracture.mesh.domainLimits[3], self.fracture.mesh.domainLimits[4] + elems_add * self.fracture.mesh.hx],
                                             [self.fracture.mesh.domainLimits[1], self.fracture.mesh.domainLimits[2]]
                                         ]
                                     else
                                         # log.info("Remeshing by extending in horizontal direction to keep symmetry...")
-                                        @info "Remeshing by extending in horizontal direction to keep symmetry..."
+                                        @info "Remeshing by extending in horizontal direction to keep symmetry..." _group = log
                                         new_limits = [
                                             [
                                                 self.fracture.mesh.domainLimits[3] - elems_add * self.fracture.mesh.hx/2,
@@ -1048,7 +1049,7 @@ module Controller
                     # if np.asarray(side_bools).any():
                     # if any(side_bools) # Check the original side_bools
                     if any(side_bools) # Check the original side_bools vector
-                        @info "Remeshing by compressing the domain (fallback)..."
+                        @info "Remeshing by compressing the domain (fallback)..." _group = log
 
                         # Re-calculate compression parameters (similar to earlier)
                         # Initialize variables
@@ -1086,7 +1087,7 @@ module Controller
                                 compression_factor = self.sim_prop.remeshFactor
                             end
                             # log.info("The real reduction factor used is " + repr(compression_factor))
-                            @info "The real reduction factor used is $(compression_factor)"
+                            @info "The real reduction factor used is $(compression_factor)" _group = log
 
 
                         end
@@ -1135,10 +1136,10 @@ module Controller
                         remesh(self, new_limits, elems, rem_factor=compression_factor)
                     end # if any(side_bools) fallback
 
-                    @info "\nRemeshed at $(self.fracture.time)"
+                    @info "\nRemeshed at $(self.fracture.time)" _group = log_only_to_logfile
 
                 else
-                    @info "Reached end of the domain. Exiting..."
+                    @info "Reached end of the domain. Exiting..." _group = log
                     # break
                     break
                 end # if enableRemeshing
@@ -1169,7 +1170,7 @@ module Controller
                     Qact = get_injection_rate(self.injection_prop, self.fracture.time, self.fracture) # Assuming function
                     after_time = intersect(time_larger, pos_inj)
                     if length(after_time) == 0 && maximum(Qact) == 0.0
-                        @warn "Positive injection not found!"
+                        @warn "Positive injection not found!" _group = log
                         break
                     elseif length(after_time) == 0
                         jump_to = self.fracture.time + self.fracture.time * 0.1
@@ -1183,10 +1184,10 @@ module Controller
                 self.fullyClosed = true
                 self.fracture = deepcopy(Fr_n_pls1)
             elseif status == 17
-                @info "The fracture is advancing more than two cells in a row at time $(self.fracture.time)"
+                @info "The fracture is advancing more than two cells in a row at time $(self.fracture.time)" _group = log
 
                 if self.TmStpReductions == self.sim_prop.maxReattemptsFracAdvMore2Cells
-                    @warn "We can not reduce the time step more than that"
+                    @warn "We can not reduce the time step more than that" _group = log
                     if self.sim_prop.collectPerfData
                         local file_address
                         if self.sim_prop.saveToDisk
@@ -1196,10 +1197,10 @@ module Controller
                         end
                         jldsave(file_address; perfData=self.perfData)
                     end
-                    @info "\n\n---Simulation failed---"
+                    @info "\n\n---Simulation failed---" _group = log
                     error("Simulation failed.")
                 else
-                    @info "- limiting the time step - "
+                    @info "- limiting the time step - " _group = log
                     if isa(self.sim_prop.tmStpPrefactor, Matrix) # Assuming it's a 2D array like in Python
                         times_le_current = findall(self.sim_prop.tmStpPrefactor[1, :] .<= self.fracture.time) # 1-based indexing for rows
                         if !isempty(times_le_current)
@@ -1213,8 +1214,8 @@ module Controller
                 end
             else
                 # time step failed
-                @warn "\n$(get(self.errorMessages, status, "Unknown error status: $status"))" # Safe get from dict
-                @warn "\nTime step failed at = $(self.fracture.time)"
+                @warn "\n$(get(self.errorMessages, status, "Unknown error status: $status"))" _group = log
+                @warn "\nTime step failed at = $(self.fracture.time)" _group = log
                 queue_element = self.fr_queue[(self.successfulTimeSteps % 5) + 1]
                 if queue_element === nothing || self.chkPntReattmpts == 4
                     if self.sim_prop.collectPerfData
@@ -1227,7 +1228,7 @@ module Controller
                         jldsave(file_address; perfData=self.perfData)
                     end
 
-                    @info "\n\n---Simulation failed---"
+                    @info "\n\n---Simulation failed---" _group = log
                     error("Simulation failed.")
                 else
                     # decrease time step pre-factor before taking the next fracture in the queue having last
@@ -1260,15 +1261,15 @@ module Controller
                     if fracture_to_restore === nothing
                         # This shouldn't happen if chkPntReattmpts <= 4 and the queue is properly initialized.
                         # But let's handle it gracefully.
-                        @error "Attempted to restore from an uninitialized checkpoint in fr_queue[$idx_to_get]"
-                        error("Simulation failed due to uninitialized checkpoint.")
+                        @error "Attempted to restore from an uninitialized checkpoint in fr_queue[$idx_to_get]" _group = log
+                        error("Simulation failed due to uninitialized checkpoint.") 
                     end
 
                     remesh(self.solid_prop, fracture_to_restore.mesh) # Assuming remesh function for solid_prop
                     remesh(self.injection_prop, fracture_to_restore.mesh, self.fracture.mesh) # Assuming remesh function for injection_prop
 
                     self.fracture = deepcopy(fracture_to_restore)
-                    @warn "Time step have failed despite of reattempts with slightly smaller/bigger time steps...\nGoing $(5 - self.chkPntReattmpts) time steps back and re-attempting with the time step pre-factor of $(current_PreFctr)"
+                    @warn "Time step have failed despite of reattempts with slightly smaller/bigger time steps...\nGoing $(5 - self.chkPntReattmpts) time steps back and re-attempting with the time step pre-factor of $(current_PreFctr)" _group = log
 
                     # self.failedTimeSteps += 1
                     self.failedTimeSteps += 1
@@ -1279,11 +1280,11 @@ module Controller
         end # while loop
 
         println("\n")
-        @info "Final time = $(self.fracture.time)"
-        @info "-----Simulation finished------"
-        @info "number of time steps = $(self.successfulTimeSteps)"
-        @info "failed time steps = $(self.failedTimeSteps)"
-        @info "number of remeshings = $(self.remeshings)"
+        @info "Final time = $(self.fracture.time)" _group = log
+        @info "-----Simulation finished------" _group = log
+        @info "number of time steps = $(self.successfulTimeSteps)" _group = log
+        @info "failed time steps = $(self.failedTimeSteps)" _group = log
+        @info "number of remeshings = $(self.remeshings)" _group = log
 
         # Assuming PyPlot is used
         plt.show(block=false) # PyPlot
@@ -1320,6 +1321,7 @@ module Controller
         - `Tuple{Int, Any}`: (exitstatus, Fr) -- see documentation for possible values of exitstatus and Fr is the fracture after advancing time step.
     """
     function advance_time_step(self::Controller, Frac::Any, C::Union{Nothing, Array{Float64}}, timeStep::Float64, perfNode::Union{Nothing, Any}=nothing)::Tuple{Int, Any}
+        log = "JFrac.controller.advance_time_step"
         # loop for reattempting time stepping in case of failure.
         for i in 1:(self.sim_prop.maxReattempts)
             # smaller time step to reattempt time stepping; equal to the given time step on first iteration
@@ -1332,12 +1334,12 @@ module Controller
 
             # check for final time
             if Frac.time + tmStp_to_attempt > 1.01 * self.sim_prop.finalTime
-                @info "$(Frac.time + tmStp_to_attempt)"
+                @info "$(Frac.time + tmStp_to_attempt)" _group = log
                 return -99, Frac 
             end
             println('\n')
-            @info "Evaluating solution at time = $(Frac.time+tmStp_to_attempt) ..."
-            @debug "Attempting time step of $(tmStp_to_attempt) sec..."
+            @info "Evaluating solution at time = $(Frac.time+tmStp_to_attempt) ..." _group = log
+            @debug "Attempting time step of $(tmStp_to_attempt) sec..." _group = log
 
             perfNode_TmStpAtmpt = instrument_start("time step attempt", perfNode) # Assuming instrument_start is defined
 
@@ -1360,8 +1362,8 @@ module Controller
             if status in [1, 12, 14, 16, 17]
                 break
             else
-                @warn "$(get(self.errorMessages, status, "Unknown error status: $status"))" # Safe get from dict
-                @warn "Time step failed..."
+                @warn "$(get(self.errorMessages, status, "Unknown error status: $status"))" _group = log
+                @warn "Time step failed..." _group = log
             end
         end
         return status, Fr
@@ -1384,6 +1386,9 @@ module Controller
         - nothing
     """
     function output(self::Controller, Fr_advanced::Any)::Nothing
+        
+        log = "Jfrac.output"
+
         in_req_TSrs = false
         # current time in the time series given at which the solution is to be evaluated
         if self.sim_prop.get_solTimeSeries() !== nothing && self.sim_prop.plotATsolTimeSeries
@@ -1418,11 +1423,11 @@ module Controller
             if save_TP_exceeded || in_req_TSrs || save_TS_exceeded
 
                 # save fracture to disk
-                @info "Saving solution at $(Fr_advanced.time)..."
+                @info "Saving solution at $(Fr_advanced.time)..." _group = log
                 Fr_advanced.SaveFracture(joinpath(self.sim_prop.get_outputFolder(), 
                                                 self.sim_prop.get_simulation_name() * "_file_" * string(self.lastSavedFile)))
                 self.lastSavedFile += 1
-                @info "Done! "
+                @info "Done! " _group = log
 
                 self.lastSavedTime = Fr_advanced.time
             end
@@ -1450,7 +1455,7 @@ module Controller
 
             if plot_TP_exceeded || in_req_TSrs || plot_TS_exceeded
                 for (index, plt_var) in enumerate(self.sim_prop.plotVar)
-                    @info "Plotting solution at $(Fr_advanced.time)..."
+                    @info "Plotting solution at $(Fr_advanced.time)..." _group = log
                     plot_prop = PlotProperties() # Assuming PlotProperties is defined
 
                     if self.Figures[index] !== nothing
@@ -1577,7 +1582,7 @@ module Controller
                     self.setFigPos = false
                 end
 
-                @info "Done! "
+                @info "Done! " _group = log
                 if self.sim_prop.blockFigure
                     println("click on the window to continue...")
                     plt.waitforbuttonpress() # Assuming PyPlot
@@ -1612,6 +1617,9 @@ module Controller
         - `Float64`: the appropriate time step.
     """
     function get_time_step(self::Controller)::Float64
+        
+        log = "JFrac.get_time_step"
+        
         time_step_given = false
         time_step = 0.0 # Initialize time_step
         
@@ -1645,7 +1653,7 @@ module Controller
         if !time_step_given
             delta_x = minimum([self.fracture.mesh.hx, self.fracture.mesh.hy])
             if any(isnan, self.fracture.v)
-                @warn "you should not get nan velocities"
+                @warn "you should not get nan velocities" _group = log
             end
             non_zero_v = findall(self.fracture.v .> 0) # 1-based indexing
             # time step is calculated with the current propagation velocity
@@ -1730,8 +1738,7 @@ module Controller
                 self.stagnant_TS = time_step * 1.2
             else
                 TS_obtained = false
-                @warn "The fracture front is stagnant and there is no injection. In these conditions, " *
-                    "there is no criterion to calculate time step size."
+                @warn "The fracture front is stagnant and there is no injection. In these conditions, there is no criterion to calculate time step size." _group = log
                 while !TS_obtained
                     try
                         println("Enter the time step size(seconds) you would like to try: ")
@@ -1775,7 +1782,7 @@ module Controller
 
         # checking if the time step is above the limit
         if self.sim_prop.timeStepLimit !== nothing && time_step > self.sim_prop.timeStepLimit
-            @warn "Evaluated/given time step is more than the time step limit! Limiting time step..."
+            @warn "Evaluated/given time step is more than the time step limit! Limiting time step..." _group = log
             time_step = self.sim_prop.timeStepLimit
         end
 
@@ -1795,6 +1802,8 @@ module Controller
     """
     function remesh(self::Controller, new_limits::Vector{Vector{Float64}}, elems::Vector{Int}, direction::Union{Nothing, String}=nothing, rem_factor::Number=10)
 
+        log = "JFrac.remesh"
+        
         # Generating the new mesh (with new limits but same number of elements)
         coarse_mesh = CartesianMesh(new_limits[1],
                                     new_limits[2],
@@ -1825,7 +1834,7 @@ module Controller
                     self.C = load_isotropic_elasticity_matrix_symmetric(coarse_mesh, self.solid_prop.Eprime)
                 end
             else
-                @info "Extending the elasticity matrix..."
+                @info "Extending the elasticity matrix..." _group = log
                 extend_isotropic_elasticity_matrix(self, coarse_mesh, direction=direction)
             end
         else

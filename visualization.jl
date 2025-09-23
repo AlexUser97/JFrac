@@ -59,7 +59,8 @@ module Visualization
                             backGround_param::Union{String, Nothing}=nothing, plot_non_zero::Bool=true, 
                             source_loc::Vector{Float64}=[0.0, 0.0])
 
-        @info "Plotting $variable..."
+        log = "JFrac.plot_fracture_list"
+        @info "Plotting $variable..." _group = log
         
         if !isa(fracture_list, Vector)
             throw(ArgumentError("The provided fracture_list is not Vector type object!"))
@@ -1021,8 +1022,10 @@ module Visualization
                                             plt_2D_image::Bool=true, 
                                             export2Json::Bool=false)
         
+        log = "JFrac.plot.fracture_slice_interploation"
+        
         if !export2Json
-            @info "Plotting slice..."
+            @info "Plotting slice..." _group = log
         end
         
         if plt_2D_image
@@ -1215,8 +1218,10 @@ module Visualization
                                             extreme_points::Union{Matrix{Float64}, Nothing}=nothing, 
                                             export2Json::Bool=false)
         
+        log = "JFrac.plot_fracture_slice_cell_center"
+        
         if !export2Json
-            @info "Plotting slice..."
+            @info "Plotting slice..." _group = log
             if plt_2D_image
                 if fig === nothing
                     fig = PyPlot.figure()
@@ -1621,7 +1626,8 @@ module Visualization
                                             labels::Union{LabelProperties, Nothing}=nothing, 
                                             gamma::Union{Float64, Nothing}=nothing)
         
-        @info "PyFrac.plot_analytical_solution_at_point"
+        log = "JFrac.plot_analytical_solution_at_point"
+        
         
         if !(variable in supported_variables)
             throw(ArgumentError("Variable $variable is not supported"))
@@ -1663,7 +1669,7 @@ module Visualization
 
         if variable in ["time", "t", "front_dist_min", "d_min", "front_dist_max", "d_max",
                         "front_dist_mean", "d_mean"]
-            @warn "The given variable does not vary spatially."
+            @warn "The given variable does not vary spatially." _group = log
         end
 
         plot_prop_cp.lineColor = plot_prop.lineColorAnal
@@ -1707,8 +1713,10 @@ module Visualization
     function plot_scale_3D(fracture, fig::Union{PyPlot.Figure, Nothing}=nothing, plot_prop::Union{PlotProperties, Nothing}=nothing)
         """ This function plots lines with dimensions on the 3D fracture plot."""
         
-        @info "PyFrac.plot_scale_3D"
-        @info "Plotting scale..."
+        log = "JFrac.plot_scale_3D"
+        
+        @info "JFrac.plot_scale_3D" _group = log
+        @info "Plotting scale..." _group = log
         
         if fig === nothing
             fig = PyPlot.figure()
@@ -1828,8 +1836,10 @@ module Visualization
                         vmax::Union{Float64, Nothing}=nothing,
                         label::Union{String, Nothing}=nothing)
         
-        @info "PyFrac.plot_slice_3D"
-        @info "Plotting slice in 3D..."
+        log = "JFrac.plot_slice_3D"
+        
+        @info "JFrac.plot_slice_3D" _group = log
+        @info "Plotting slice in 3D..." _group = log
 
         if fig === nothing
             fig = PyPlot.figure()
@@ -1926,7 +1936,8 @@ module Visualization
                                     h=nothing, samp_cell=nothing,
                                     fig=nothing, plot_prop=nothing,
                                     gamma=nothing, inj_point=nothing)
-        @info "Plotting analytical footprint..."
+        
+        log = "JFrac.plot_footprint_analytical"
 
         # Create or use existing figure
         if fig === nothing
@@ -2028,8 +2039,9 @@ module Visualization
                                     contours_at::Union{Vector, Nothing}=nothing, 
                                     gamma::Union{Float64, Nothing}=nothing)
         
-        @info "PyFrac.plot_analytical_solution"
-        @info "Plotting analytical $variable $regime solution..."
+        log = "JFrac.plot_analytical_solution"
+        
+        @info "Plotting analytical $variable $regime solution..." _group = log
         
         if !(variable in supported_variables)
             throw(ArgumentError("Variable $variable is not supported"))
@@ -2338,7 +2350,7 @@ module Visualization
                                     plot_non_zero::Bool=true, pause_time::Float64=0.2,
                                     save_images::Bool=false, images_address::String=".")
         
-        @info "PyFrac.animate_simulation_results"
+        log =  "JFrac.animate_simulation_results"
         
         if isa(variable, String)
             variable = [variable]
@@ -2348,7 +2360,7 @@ module Visualization
         setFigPos = true
         for (Fr_i, fracture) in enumerate(fracture_list)
             for (indx, plt_var) in enumerate(variable)
-                @info "Plotting solution at $(fracture.time)..."
+                @info "Plotting solution at $(fracture.time)..." _group = log
                 if plot_prop === nothing
                     plot_prop = PlotProperties()
                 end
@@ -2634,7 +2646,7 @@ module Visualization
     function save_images_to_video(image_folder, video_name="movie")
         """ This function makes a video from the images in the given folder."""
         
-        @info "PyFrac.save_images_to_video"
+        log = "JFrac.save_images_to_video"
         
         # Note: OpenCV.jl or similar package would be needed for this functionality
         # This is a conceptual translation - you'll need to install appropriate packages
@@ -2648,7 +2660,7 @@ module Visualization
         sort!(images)  # Sort to ensure proper order
         
         if length(images) == 0
-            @warn "No PNG images found in folder $image_folder"
+            @warn "No PNG images found in folder $image_folder" _group = log
             return
         end
 
@@ -2662,7 +2674,7 @@ module Visualization
         
         img_no = 0
         for image in images
-            @info "adding image no $img_no"
+            @info "adding image no $img_no" _group = log
             image_path = joinpath(image_folder, image)
             frame = OpenCV.imread(image_path)
             # video.write(frame)  # Conceptual

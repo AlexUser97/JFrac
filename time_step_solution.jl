@@ -59,8 +59,10 @@ module TimeStepSolution
     """
     function attempt_time_step(Frac, C, mat_properties, fluid_properties, sim_properties, inj_properties,
                             timeStep::Float64, perfNode::Union{IterationProperties, Nothing}=nothing)
+        
+        log = "JFrac.attempt_time_step"
 
-        @debug "attempt_time_step called" _group="JFrac.attempt_time_step"
+        @debug "attempt_time_step called" _group=log
         
         Qin = inj_properties.get_injection_rate(Frac.time, Frac)
         

@@ -300,8 +300,8 @@ module Elasticity
         - `Matrix{Float64}`: the elasticity matrix.
     """
     function load_TI_elasticity_matrix(Mesh, mat_prop, sim_prop)::Matrix{Float64}
-        log = Logging.current_logger()
-        @info "Writing parameters to a file..." _group="JFrac.load_TI_elasticity_matrix"
+        log = "JFrac.load_TI_elasticity_matrix"
+        @info "Writing parameters to a file..." _group=log
         
         data = Dict(
             "Solid parameters" => Dict(
@@ -319,7 +319,7 @@ module Elasticity
             )
         )
 
-        @info "Writing parameters to a file..." _group="JFrac.load_TI_elasticity_matrix"
+        @info "Writing parameters to a file..." _group=log
         
         curr_directory = pwd()
         cd(sim_prop.TI_KernelExecPath)
@@ -335,10 +335,10 @@ module Elasticity
                 suffix = "./"
             end
 
-            @info "running C++ process..." _group="JFrac.load_TI_elasticity_matrix"
+            @info "running C++ process..." _group=log
             run(`$suffix TI_elasticity_kernel`)
 
-            @info "Reading global TI elasticity matrix..." _group="JFrac.load_TI_elasticity_matrix"
+            @info "Reading global TI elasticity matrix..." _group=log
             
             n_elements = data["Mesh"]["n1"] * data["Mesh"]["n3"]
             C = Matrix{Float64}(undef, n_elements, n_elements)
@@ -377,8 +377,8 @@ module Elasticity
         - `Matrix`: the elasticity matrix.
     """
     function load_elasticity_matrix(Mesh, EPrime::Float64)
-        log = Logging.current_logger()
-        @info "Reading global elasticity matrix..." _group="JFrac.load_elasticity_matrix"
+        log = "JFrac.load_elasticity_matrix"
+        @info "Reading global elasticity matrix..." _group=log
 
         filename = "CMatrix.jld2"
 
@@ -388,27 +388,27 @@ module Elasticity
             end
 
             if (Mesh.nx, Mesh.ny, Mesh.Lx, Mesh.Ly, EPrime) == (MeshLoaded.nx, MeshLoaded.ny, MeshLoaded.Lx, MeshLoaded.Ly, EPrimeLoaded)
-                @info "Loaded matrix is compatible." _group="JFrac.load_elasticity_matrix"
+                @info "Loaded matrix is compatible." _group=log
                 return C_loaded
             else
-                @warn "The loaded matrix is not correct with respect to the current mesh or the current plain strain modulus.\nMaking global matrix..." _group="JFrac.load_elasticity_matrix"
+                @warn "The loaded matrix is not correct with respect to the current mesh or the current plain strain modulus.\nMaking global matrix..." _group=log
                 C = load_isotropic_elasticity_matrix(Mesh, EPrime)
 
                 jldsave(filename; C=C, Mesh=Mesh, EPrime=EPrime)
 
-                @info "Done!" _group="JFrac.load_elasticity_matrix"
+                @info "Done!" _group="JFrac.load_elasticity_matrix" _group=log
                 return C
             end
         catch e
             if (isa(e, SystemError) || isa(e, ErrorException)) && !isfile(filename)
-                @error "File $filename not found\nBuilding the global elasticity matrix..." exception=(e, catch_backtrace()) _group="JFrac.load_elasticity_matrix"
+                @error "File $filename not found\nBuilding the global elasticity matrix..." exception=(e, catch_backtrace()) _group=log
                 C = load_isotropic_elasticity_matrix(Mesh, EPrime)
                 jldsave(filename; C=C, Mesh=Mesh, EPrime=EPrime)
 
-                @info "Done!" _group="JFrac.load_elasticity_matrix"
+                @info "Done!" _group="JFrac.load_elasticity_matrix" _group=log
                 return C
             else
-                @error "An error occurred while loading/saving the elasticity matrix" exception=(e, catch_backtrace()) _group="JFrac.load_elasticity_matrix"
+                @error "An error occurred while loading/saving the elasticity matrix" exception=(e, catch_backtrace()) _group=log
                 rethrow(e)
             end
         end

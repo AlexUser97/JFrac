@@ -50,7 +50,7 @@ module ExplicitRKL
         - `(sol, s)`: Solution and number of sub-steps.
     """
     function solve_width_pressure_RKL2(Eprime::Float64, GPU::Bool, n_threads::Int, perf_node, args...)
-        log = Logging.current_logger()
+        log = "JFrac.solve_width_pressure_RKL2"
         # perfNode_RKL = instrument_start("linear system solve", perf_node)
 
         to_solve = args[1]

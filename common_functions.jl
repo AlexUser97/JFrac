@@ -1,6 +1,6 @@
 module CommonFunctions
 
-    export locate_element
+    export locate_element, logging_level
 
     """
         locate_element(mesh, x, y)
@@ -22,7 +22,7 @@ module CommonFunctions
         x <= mesh.domainLimits[3] - mesh.hx / 2 || 
         y <= mesh.domainLimits[1] - mesh.hy / 2
             
-            @warn "PyFrac.locate_element: Point is outside domain." _group="PyFrac.mesh"
+            @warn "Point is outside domain." _group="JFrac.locate_element"
             return NaN
         end
 
@@ -39,4 +39,69 @@ module CommonFunctions
             return NaN
         end
     end
+
+    """
+        logging_level(logging_level_string)
+
+        This function returns the pertinent logging level based on the string received as input.
+
+        # Arguments
+        - `logging_level_string::String`: string that defines the level of logging:
+            - 'debug' - Detailed information, typically of interest only when diagnosing problems.
+            - 'info' - Confirmation that things are working as expected.
+            - 'warning' - An indication that something unexpected happened, or indicative of some problem in the near future.
+            - 'error' - Due to a more serious problem, the software has not been able to perform some function.
+
+        # Returns
+        - Logging level code (e.g., Logging.Debug).
+    """
+    
+    function logging_level(logging_level_string::String)::LogLevel
+        level_map = Dict{String, LogLevel}(
+            "debug" => Logging.Debug,
+            "Debug" => Logging.Debug,
+            "DEBUG" => Logging.Debug,
+            "info" => Logging.Info,
+            "Info" => Logging.Info,
+            "INFO" => Logging.Info,
+            "warning" => Logging.Warn,
+            "Warning" => Logging.Warn,
+            "WARNING" => Logging.Warn,
+            "error" => Logging.Error,
+            "Error" => Logging.Error,
+            "ERROR" => Logging.Error,
+        )
+
+        if haskey(level_map, logging_level_string)
+            return level_map[logging_level_string]
+        else
+            error("Options are: debug, info, warning, error, critical. Got: $logging_level_string")
+        end
+    end
+
+    macro custom_log(level, msg, group)
+        msg = esc(msg)
+        group = esc(group)
+
+        quote
+            log_level = try
+                logging_level(string($level))
+            catch e
+                @error "Unknown log level: $($level)" _group = $group
+                return
+            end
+
+            if log_level == Logging.Debug
+                @debug $msg _group = $group
+            elseif log_level == Logging.Info
+                @info $msg _group = $group
+            elseif log_level == Logging.Warn
+                @warn $msg _group = $group
+            elseif log_level == Logging.Error
+                @error $msg _group = $group
+            end
+        end
+    end
+
+
 end

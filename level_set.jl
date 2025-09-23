@@ -35,6 +35,8 @@ module LevelSet
                     farAwayPstv::Vector{Int}, 
                     farAwayNgtv::Vector{Int})
         
+        log = "JFrac.SolveFMM"
+
         # For elements radially outward from ribbon cells
         Alive = copy(EltRibbon)
         NarrowBand = copy(EltRibbon)
@@ -75,7 +77,7 @@ module LevelSet
                                 levelSet[mesh.NeiElements[neighbor, 4]])
                     
                     if NeigxMin >= 1e50 && NeigyMin >= 1e50
-                        @warn "You are trying to compute the level set in a cell where all the neighbours have infinite distance to the front"
+                        @warn "You are trying to compute the level set in a cell where all the neighbours have infinite distance to the front" _group = log
                     end
                     
                     delT = NeigyMin - NeigxMin
@@ -168,7 +170,7 @@ module LevelSet
                                     positive_levelSet[mesh.NeiElements[neighbor, 4]])
                         
                         if NeigxMin >= 1e50 && NeigyMin >= 1e50
-                            @warn "You are trying to compute the level set in a cell where all the neighbours have infinite distance to the front"
+                            @warn "You are trying to compute the level set in a cell where all the neighbours have infinite distance to the front" _group = log
                         end
                         
                         beta = mesh.hx / mesh.hy
@@ -462,7 +464,7 @@ module LevelSet
     function UpdateLists(EltsChannel::Vector{Int}, EltsTipNew::Vector{Int}, FillFrac::Vector{Float64}, 
                         levelSet::Vector{Float64}, mesh)
         
-        logger = Logging.current_logger()
+        logger = "JFrac.UpdateLists"
         # new tip elements contain only the partially filled elements
         # Using a tolerance slightly less than 1.0 as in the Python code
         partially_filled_mask = FillFrac .<= 0.9999 
@@ -558,7 +560,7 @@ module LevelSet
         
         # Debug check
         if any(levelSet[eltsRibbon] .> 0)
-            @debug logger "UpdateLists" "Probably there is a bug here...."
+            @debug "UpdateLists" "Probably there is a bug here...." _group = log
         end
 
         CellStatusNew = zeros(Int, mesh.NumberOfElts)

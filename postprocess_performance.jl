@@ -38,7 +38,10 @@ module PostprocessPerformance
         - `perf_data::Vector`: the loaded performance data in the form of a list of IterationProperties objects.
     """
     function load_performance_data(address::Union{String, Nothing}=nothing, sim_name::String="simulation")
-        @info "---loading performance data---" _group="JFrac.load_performance_data"
+        
+        log = "JFrac.load_perfomance_data"
+        
+        @info "---loading performance data---" _group=log
 
         slash = Sys.iswindows() ? "\\" : "/"
 
@@ -95,7 +98,7 @@ module PostprocessPerformance
             if isa(e, SystemError) && !isfile(filename)
                 error("Performance data file '$filename' not found! Check if saving is enabled in simulation properties.")
             else
-                @error "An error occurred while loading the performance data file '$filename'" exception=(e, catch_backtrace()) _group="JFrac.load_performance_data"
+                @error "An error occurred while loading the performance data file '$filename'" exception=(e, catch_backtrace()) _group=log
                 rethrow(e)
             end
         end
@@ -311,8 +314,10 @@ module PostprocessPerformance
         - `sim_name::Union{String, Nothing}`: the name of the simulation.
     """
     function print_performance_data(address::String, sim_name::Union{String, Nothing} = nothing)
-        logger = Logging.current_logger()
-        @info logger "print_performance_data" "---saving iterations data---\n"
+        
+        log = "JFrac.print_perfomance_data"
+
+        @info "print_performance_data" "---saving iterations data---\n" _group = log
 
         perf_data = load_performance_data(address, sim_name)
 

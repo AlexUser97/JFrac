@@ -9,6 +9,8 @@ module Utility
 
     include("tip_inversion.jl")
     using .TipInversion: TipAsymInversion
+    include("common_functions.jl")
+    using .CommonFunctions: logging_level
     using JLD2
     using Logging
     using LoggingExtras
@@ -16,7 +18,7 @@ module Utility
     using FilePathsBase: joinpath
     using Base.Filesystem: readdir, endswith
 
-    export plot_as_matrix, read_fracture, save_images_to_video, logging_level, setup_logging_to_console, nanmin, nanmax
+    export plot_as_matrix, read_fracture, save_images_to_video, setup_logging_to_console, nanmin, nanmax
 
     """
         plot_as_matrix(data, mesh, fig=nothing)
@@ -74,6 +76,9 @@ module Utility
                             The function will ensure it has a common video extension like .mp4 or .avi.
     """
     function save_images_to_video(image_folder::String, video_name::String="movie")
+        
+        log = "JFrac.save_image_to_video"
+        
         if !occursin(r"\.(mp4|avi|mov|mkv)$", video_name)
             video_name = video_name * ".mp4"
         end
@@ -82,13 +87,13 @@ module Utility
         sort!(images)
 
         if isempty(images)
-            @warn "No .png images found in folder $image_folder"
+            @warn "No .png images found in folder $image_folder" _group = log
             return
         end
         first_image_path = joinpath(image_folder, images[1])
 
         if !isfile(first_image_path)
-            @error "First image file not found: $first_image_path"
+            @error "First image file not found: $first_image_path" _group = log
             return
         end
 
@@ -119,13 +124,13 @@ module Utility
                     video_name
                 )
             )`
-            @debug "Running FFMPEG command: $cmd"
+            @debug "Running FFMPEG command: $cmd" _group = log
             run(cmd)
 
-            @info "Video saved as $video_name"
+            @info "Video saved as $video_name" _group = log
 
         catch e
-            @error "Failed to create video" exception=(e, catch_backtrace())
+            @error "Failed to create video" exception=(e, catch_backtrace()) _group = log
         finally
             if isfile(temp_list_file)
                 rm(temp_list_file, force=true)
@@ -133,43 +138,6 @@ module Utility
         end
     end
     #-----------------------------------------------------------------------------------------------------------------------
-    """
-        logging_level(logging_level_string)
-
-        This function returns the pertinent logging level based on the string received as input.
-
-        # Arguments
-        - `logging_level_string::String`: string that defines the level of logging:
-            - 'debug' - Detailed information, typically of interest only when diagnosing problems.
-            - 'info' - Confirmation that things are working as expected.
-            - 'warning' - An indication that something unexpected happened, or indicative of some problem in the near future.
-            - 'error' - Due to a more serious problem, the software has not been able to perform some function.
-
-        # Returns
-        - Logging level code (e.g., Logging.Debug).
-    """
-    function logging_level(logging_level_string::String)::LogLevel
-        level_map = Dict{String, LogLevel}(
-            "debug" => Logging.Debug,
-            "Debug" => Logging.Debug,
-            "DEBUG" => Logging.Debug,
-            "info" => Logging.Info,
-            "Info" => Logging.Info,
-            "INFO" => Logging.Info,
-            "warning" => Logging.Warn,
-            "Warning" => Logging.Warn,
-            "WARNING" => Logging.Warn,
-            "error" => Logging.Error,
-            "Error" => Logging.Error,
-            "ERROR" => Logging.Error,
-        )
-
-        if haskey(level_map, logging_level_string)
-            return level_map[logging_level_string]
-        else
-            error("Options are: debug, info, warning, error, critical. Got: $logging_level_string")
-        end
-    end
 
     """
         setup_logging_to_console(verbosity_level="debug")
@@ -193,22 +161,29 @@ module Utility
             - 'warning'  - An indication that something unexpected happened, or indicative of some problem in the near future.
             - 'error'    - Due to a more serious problem, the software has not been able to perform some function.
     """
-    function setup_logging_to_console(verbosity_level::String="debug")
-        
+    function setup_logging_to_console(verbosity_level::String = "debug")
+
         console_lvl = logging_level(verbosity_level)
-        console_logger = ConsoleLogger(stderr, console_lvl)
 
-        jfrac_filter(logger_args) = begin
-            group_name = getfield(logger_args.group, :name)
-            return startswith(string(group_name), "JFrac")
+        formatter(log_args) = begin
+            level_str = rpad(string(log_args.level), 8)
+            message_str = log_args.message
+            return "$level_str:     $message_str"
         end
-        filtered_logger = EarlyFilteredLogger(jfrac_filter, console_logger)
 
+        console_logger = FormatLogger(formatter) do io, args
+            println(io, args.message)
+        end
+
+        jfrac_filter(log_args) = startswith(get(log_args.group, :name, ""), "JFrac")
+        level_logger = MinLevelLogger(console_logger, console_lvl)
+        filtered_logger = EarlyFilteredLogger(jfrac_filter, level_logger)
         global_logger(filtered_logger)
-        @info "Console logger set up correctly" _group="JFrac.general"
+        @info "Console logger set up correctly" _group = "JFrac.general"
 
         return nothing
     end
+    
 
     function nanmin(arr)
         valid_values = filter(!isnan, arr)
